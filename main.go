@@ -1269,6 +1269,8 @@ func main() {
 	r.GET("/blog/index.php/search/:keyword/:page/", handleSearch)
 	r.GET("/blog/index.php/category/:slug", handleCategory)
 	r.GET("/blog/index.php/category/:slug/", handleCategory)
+	r.GET("/blog/index.php/category/:slug/:page", handleCategory)
+	r.GET("/blog/index.php/category/:slug/:page/", handleCategory)
 	r.GET("/blog/index.php/category/:slug/page/:page", handleCategory)
 	r.GET("/blog/index.php/category/:slug/page/:page/", handleCategory)
 	r.GET("/blog/index.php/archives/:cid", handlePost)
