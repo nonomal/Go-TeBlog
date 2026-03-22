@@ -438,13 +438,13 @@
                     <div style="display: flex; gap: 10px;">
                         <form action="{{adminPath}}/backups/vacuum" method="POST" class="inline-form"
                             onsubmit="return confirm('压缩数据库将重新整理文件并释放空间，可能需要几秒钟，确定继续吗？')">
-                            <button type="submit" class="btn btn-outline" {{if .IsBackingUp}}disabled
+                            <button type="submit" id="vacuumDatabaseBtn" class="btn btn-outline" {{if .IsBackingUp}}disabled
                                 style="opacity: 0.6; cursor: not-allowed;" {{end}}>
                                 <i class="fas fa-compress-alt"></i> 压缩数据库 (VACUUM)
                             </button>
                         </form>
                         <form action="{{adminPath}}/backups/create" method="POST" class="inline-form">
-                            <button type="submit" class="btn btn-primary" {{if .IsBackingUp}}disabled
+                            <button type="submit" id="createBackupBtn" class="btn btn-primary" {{if .IsBackingUp}}disabled
                                 style="opacity: 0.6; cursor: not-allowed;" {{end}}>
                                 <i class="fas fa-plus"></i> 创建新备份
                             </button>
@@ -538,6 +538,28 @@
             const refreshBtn = document.getElementById('refreshBackupPanelBtn');
             if (!refreshBtn) return;
 
+            const syncActionButtons = (doc) => {
+                const nextPanel = doc.getElementById('backupRuntimePanel');
+                const currentPanel = document.getElementById('backupRuntimePanel');
+                if (nextPanel && currentPanel) {
+                    currentPanel.replaceWith(nextPanel);
+                }
+
+                const nextCreateBtn = doc.getElementById('createBackupBtn');
+                const currentCreateBtn = document.getElementById('createBackupBtn');
+                if (nextCreateBtn && currentCreateBtn) {
+                    currentCreateBtn.disabled = nextCreateBtn.disabled;
+                    currentCreateBtn.style.cssText = nextCreateBtn.style.cssText;
+                }
+
+                const nextVacuumBtn = doc.getElementById('vacuumDatabaseBtn');
+                const currentVacuumBtn = document.getElementById('vacuumDatabaseBtn');
+                if (nextVacuumBtn && currentVacuumBtn) {
+                    currentVacuumBtn.disabled = nextVacuumBtn.disabled;
+                    currentVacuumBtn.style.cssText = nextVacuumBtn.style.cssText;
+                }
+            };
+
             let isRefreshing = false;
             refreshBtn.addEventListener('click', async () => {
                 if (isRefreshing) return;
@@ -558,12 +580,7 @@
 
                     const html = await res.text();
                     const doc = new DOMParser().parseFromString(html, 'text/html');
-                    const nextPanel = doc.getElementById('backupRuntimePanel');
-                    const currentPanel = document.getElementById('backupRuntimePanel');
-
-                    if (nextPanel && currentPanel) {
-                        currentPanel.replaceWith(nextPanel);
-                    }
+                    syncActionButtons(doc);
                 } catch (e) {
                     alert('刷新失败，请稍后重试。');
                 } finally {
