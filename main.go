@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html/template"
 	"io"
@@ -443,6 +444,17 @@ type SiteInfo struct {
 	Theme       string
 	SiteUrl     string
 	FooterCode  template.HTML
+}
+
+type sitemapURL struct {
+	Loc     string `xml:"loc"`
+	LastMod string `xml:"lastmod,omitempty"`
+}
+
+type sitemapURLSet struct {
+	XMLName xml.Name     `xml:"urlset"`
+	Xmlns   string       `xml:"xmlns,attr"`
+	URLs    []sitemapURL `xml:"url"`
 }
 
 type PageData struct {
@@ -1338,6 +1350,21 @@ func main() {
 		})
 	}
 
+	handleSitemap := func(c *gin.Context) {
+		entries := buildSitemapEntries(db, c.Request)
+		c.Header("Content-Type", "application/xml; charset=utf-8")
+		c.String(http.StatusOK, xml.Header)
+		encoder := xml.NewEncoder(c.Writer)
+		encoder.Indent("", "  ")
+		if err := encoder.Encode(sitemapURLSet{
+			Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
+			URLs:  entries,
+		}); err != nil {
+			log.Printf("Error rendering sitemap: %v", err)
+		}
+	}
+
+	r.GET("/sitemap.xml", handleSitemap)
 	r.GET("/blog", handleIndex)
 	r.GET("/blog/", handleIndex)
 	r.GET("/blog/index.php", handleIndex)
@@ -1589,6 +1616,139 @@ func getSiteInfo(db *sql.DB) SiteInfo {
 		SiteUrl:     getOption(db, "siteUrl", "http://localhost:8190"),
 		FooterCode:  template.HTML(getOption(db, "footerCode", "")),
 	}
+}
+
+func buildSitemapEntries(db *sql.DB, req *http.Request) []sitemapURL {
+	baseURL := getSitemapBaseURL(db, req)
+	entries := []sitemapURL{
+		buildSitemapURL(baseURL, "/blog/index.php", time.Now().Unix()),
+	}
+
+	rows, err := db.Query(`
+		SELECT cid, created, modified
+		FROM typecho_contents
+		WHERE type='post' AND status='publish'
+		AND cid NOT IN (
+			SELECT cid FROM typecho_relationships r
+			JOIN go_category_settings s ON r.mid = s.mid
+			WHERE s.show_on_home = 0 OR s.is_offline = 1
+		)
+		ORDER BY created DESC`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var created int64
+			var modified int64
+			if scanErr := rows.Scan(&cid, &created, &modified); scanErr != nil {
+				continue
+			}
+			lastMod := modified
+			if lastMod <= 0 {
+				lastMod = created
+			}
+			entries = append(entries, buildSitemapURL(baseURL, fmt.Sprintf("/blog/index.php/archives/%d/", cid), lastMod))
+		}
+	}
+
+	catRows, err := db.Query(`
+		SELECT m.slug
+		FROM typecho_metas m
+		LEFT JOIN go_category_settings s ON m.mid = s.mid
+		WHERE m.type='category' AND COALESCE(s.is_offline, 0) = 0
+		ORDER BY m."order" ASC, m.mid ASC`)
+	if err == nil {
+		defer catRows.Close()
+		for catRows.Next() {
+			var slug string
+			if scanErr := catRows.Scan(&slug); scanErr != nil || slug == "" {
+				continue
+			}
+			entries = append(entries, buildSitemapURL(baseURL, "/blog/index.php/category/"+slug+"/", 0))
+		}
+	}
+
+	archiveRows, err := db.Query(`
+		SELECT 
+			CAST(strftime('%Y', datetime(created, 'unixepoch', 'localtime')) AS INTEGER) AS y,
+			CAST(strftime('%m', datetime(created, 'unixepoch', 'localtime')) AS INTEGER) AS m,
+			MAX(CASE WHEN modified > 0 THEN modified ELSE created END)
+		FROM typecho_contents
+		WHERE type='post' AND status='publish'
+		AND cid NOT IN (
+			SELECT cid FROM typecho_relationships r
+			JOIN go_category_settings s ON r.mid = s.mid
+			WHERE s.show_on_home = 0 OR s.is_offline = 1
+		)
+		GROUP BY y, m
+		ORDER BY y DESC, m DESC`)
+	if err == nil {
+		defer archiveRows.Close()
+		for archiveRows.Next() {
+			var year int
+			var month int
+			var lastMod int64
+			if scanErr := archiveRows.Scan(&year, &month, &lastMod); scanErr != nil {
+				continue
+			}
+			entries = append(entries, buildSitemapURL(baseURL, fmt.Sprintf("/blog/index.php/%04d/%02d/", year, month), lastMod))
+		}
+	}
+
+	return entries
+}
+
+func getSitemapBaseURL(db *sql.DB, req *http.Request) string {
+	configured := strings.TrimSpace(getOption(db, "siteUrl", ""))
+	if configured != "" {
+		return normalizeSiteURL(configured)
+	}
+	return getRequestBaseURL(req)
+}
+
+func buildSitemapURL(baseURL, path string, unixTs int64) sitemapURL {
+	entry := sitemapURL{
+		Loc: strings.TrimRight(baseURL, "/") + path,
+	}
+	if unixTs > 0 {
+		entry.LastMod = time.Unix(unixTs, 0).UTC().Format("2006-01-02T15:04:05Z")
+	}
+	return entry
+}
+
+func normalizeSiteURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "http://localhost:8190"
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return "http://" + trimmed
+}
+
+func getRequestBaseURL(req *http.Request) string {
+	host := strings.TrimSpace(req.Host)
+	if host == "" {
+		return "http://localhost:8190"
+	}
+
+	proto := strings.TrimSpace(req.Header.Get("X-Forwarded-Proto"))
+	if proto == "" {
+		if req.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	} else {
+		commaIdx := strings.Index(proto, ",")
+		if commaIdx >= 0 {
+			proto = strings.TrimSpace(proto[:commaIdx])
+		}
+	}
+
+	return proto + "://" + host
 }
 
 func getOption(db *sql.DB, name string, defaultValue string) string {
