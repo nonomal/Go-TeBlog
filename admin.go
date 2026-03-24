@@ -1073,24 +1073,8 @@ func main() {
 			page = 1
 		}
 		pageSize := 10
-		offset := (page - 1) * pageSize
 
 		group, _ := c.Get("userGroup")
-		var total int
-		countSQL := `
-			SELECT COUNT(*)
-			FROM typecho_contents a
-			LEFT JOIN typecho_contents p ON p.cid = a.parent AND p.type='post'
-			WHERE a.type='attachment'`
-		var countArgs []interface{}
-		if group == "visitor" {
-			countSQL += " AND p.status='publish'"
-		}
-		if searchQuery != "" {
-			countSQL += " AND p.title LIKE ?"
-			countArgs = append(countArgs, "%"+searchQuery+"%")
-		}
-		db.QueryRow(countSQL, countArgs...).Scan(&total)
 
 		querySQL := `
 			SELECT a.cid, a.title, a.text, a.created, a.parent, COALESCE(p.title, '')
@@ -1106,9 +1090,7 @@ func main() {
 			queryArgs = append(queryArgs, "%"+searchQuery+"%")
 		}
 		querySQL += `
-			ORDER BY a.created DESC
-			LIMIT ? OFFSET ?`
-		queryArgs = append(queryArgs, pageSize, offset)
+			ORDER BY a.created DESC, a.cid DESC`
 		rows, err := db.Query(querySQL, queryArgs...)
 		if err != nil {
 			c.String(500, err.Error())
@@ -1116,7 +1098,23 @@ func main() {
 		}
 		defer rows.Close()
 
-		var attachments []map[string]interface{}
+		type attachmentItem struct {
+			Cid      int
+			FileName string
+			Path     string
+			IsImage  bool
+			Created  string
+		}
+		type attachmentGroup struct {
+			ParentCid     int
+			PostTitle     string
+			LatestCreated int64
+			Created       string
+			Items         []attachmentItem
+		}
+
+		groupMap := make(map[string]*attachmentGroup)
+		groupOrder := make([]string, 0)
 		for rows.Next() {
 			var cid, parent int
 			var relPathTitle, relPathText, postTitle string
@@ -1132,18 +1130,59 @@ func main() {
 			}
 			ext := strings.ToLower(filepath.Ext(relPath))
 			isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".svg"
-			attachments = append(attachments, map[string]interface{}{
-				"Cid":       cid,
-				"FileName":  displayName,
-				"Path":      relPath,
-				"IsImage":   isImage,
-				"Created":   time.Unix(created, 0).Format("2006-01-02 15:04"),
-				"ParentCid": parent,
-				"PostTitle": postTitle,
+
+			groupKey := fmt.Sprintf("%d:%s", parent, postTitle)
+			currentGroup, exists := groupMap[groupKey]
+			if !exists {
+				currentGroup = &attachmentGroup{
+					ParentCid:     parent,
+					PostTitle:     postTitle,
+					LatestCreated: created,
+					Created:       time.Unix(created, 0).Format("2006-01-02 15:04"),
+					Items:         make([]attachmentItem, 0),
+				}
+				groupMap[groupKey] = currentGroup
+				groupOrder = append(groupOrder, groupKey)
+			}
+
+			if created > currentGroup.LatestCreated {
+				currentGroup.LatestCreated = created
+				currentGroup.Created = time.Unix(created, 0).Format("2006-01-02 15:04")
+			}
+
+			currentGroup.Items = append(currentGroup.Items, attachmentItem{
+				Cid:      cid,
+				FileName: displayName,
+				Path:     relPath,
+				IsImage:  isImage,
+				Created:  time.Unix(created, 0).Format("2006-01-02 15:04"),
 			})
 		}
 
+		attachments := make([]attachmentGroup, 0, len(groupOrder))
+		for _, key := range groupOrder {
+			attachments = append(attachments, *groupMap[key])
+		}
+
+		total := len(attachments)
 		totalPages := (total + pageSize - 1) / pageSize
+		if totalPages == 0 {
+			totalPages = 1
+		}
+		if page > totalPages {
+			page = totalPages
+		}
+
+		start := (page - 1) * pageSize
+		end := start + pageSize
+		if start > total {
+			start = total
+		}
+		if end > total {
+			end = total
+		}
+		attachments = attachments[start:end]
+
 		username, _ := c.Get("username")
 		c.HTML(http.StatusOK, "admin_attachments.html", gin.H{
 			"Username":    username,

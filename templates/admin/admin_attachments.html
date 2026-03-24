@@ -254,6 +254,72 @@
             vertical-align: middle;
         }
 
+        .post-cell {
+            min-width: 260px;
+        }
+
+        .attachment-grid-cell {
+            min-width: 360px;
+        }
+
+        .attachment-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .attachment-card {
+            width: auto;
+            min-height: 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 6px 8px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .attachment-card .attachment-thumb,
+        .attachment-card .attachment-thumb.placeholder {
+            width: 52px;
+            height: 52px;
+            flex: 0 0 52px;
+        }
+
+        .attachment-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            width: 92px;
+        }
+
+        .attachment-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: #334155;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .attachment-time {
+            font-size: 10px;
+            color: #64748b;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        .attachment-actions {
+            display: flex;
+            justify-content: flex-end;
+            flex: 0 0 auto;
+        }
+
         .preview-trigger {
             cursor: zoom-in;
             color: #0984e3;
@@ -484,6 +550,25 @@
         .clear-btn:hover {
             color: #0984e3;
         }
+
+        @media (max-width: 960px) {
+            .content {
+                padding: 88px 16px 24px;
+            }
+
+            table {
+                display: block;
+                overflow-x: auto;
+            }
+
+            .attachment-grid-cell {
+                min-width: 280px;
+            }
+
+            .attachment-card {
+                width: 108px;
+            }
+        }
     </style>
 </head>
 
@@ -538,37 +623,46 @@
         <table>
             <thead>
                 <tr>
-                    <th style="width: 92px;">缩略图</th>
                     <th>引用文章</th>
+                    <th>附件</th>
                     <th>上传时间</th>
-                    <th style="width: 90px;">操作</th>
                 </tr>
             </thead>
             <tbody>
                 {{range .Attachments}}
                 <tr>
-                    <td class="thumb-cell">
-                        {{if .IsImage}}
-                        <img class="attachment-thumb preview-trigger" src="{{.Path}}" alt="{{.FileName}}" data-preview-src="{{.Path}}">
-                        {{else}}
-                        <span class="attachment-thumb placeholder" title="{{.FileName}}"><i class="fas fa-paperclip"></i></span>
-                        {{end}}
-                    </td>
-                    <td>
+                    <td class="post-cell">
                         {{if gt .ParentCid 0}}
                         <a class="ref-link post-ellipsis" href="{{adminPath}}/edit/{{.ParentCid}}" title="{{.PostTitle}}">{{.PostTitle}}</a>
                         {{else}}
                         <span class="post-ellipsis" style="color:#94a3b8;" title="{{.PostTitle}}">{{.PostTitle}}</span>
                         {{end}}
                     </td>
-                    <td>{{.Created}}</td>
-                    <td>
-                        <form action="{{adminPath}}/attachment/delete/{{.Cid}}?back=attachments" method="POST" class="inline-form" onsubmit="return confirm('确定要删除此附件吗？删除后会自动移除文章中的引用。')">
-                            <button type="submit" class="icon-action-btn" title="删除" aria-label="删除">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </form>
+                    <td class="attachment-grid-cell">
+                        <div class="attachment-grid">
+                            {{range .Items}}
+                            <div class="attachment-card">
+                                {{if .IsImage}}
+                                <img class="attachment-thumb preview-trigger" src="{{.Path}}" alt="{{.FileName}}" data-preview-src="{{.Path}}">
+                                {{else}}
+                                <span class="attachment-thumb placeholder" title="{{.FileName}}"><i class="fas fa-paperclip"></i></span>
+                                {{end}}
+                                <div class="attachment-meta">
+                                    <div class="attachment-name" title="{{.FileName}}">{{.FileName}}</div>
+                                    <div class="attachment-time">{{.Created}}</div>
+                                </div>
+                                <div class="attachment-actions">
+                                    <form action="{{adminPath}}/attachment/delete/{{.Cid}}?back=attachments" method="POST" class="inline-form" onsubmit="return confirm('确定要删除此附件吗？删除后会自动移除文章中的引用。')">
+                                        <button type="submit" class="icon-action-btn" title="删除" aria-label="删除">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {{end}}
+                        </div>
                     </td>
+                    <td>{{.Created}}</td>
                 </tr>
                 {{end}}
             </tbody>
