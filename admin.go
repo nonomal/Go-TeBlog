@@ -373,7 +373,7 @@ func main() {
 		}
 
 		// 基础统计
-		var postCount, commentCount, categoryCount, attachmentCount int
+		var postCount, commentCount, attachmentCount int
 		var weekPostCount, weekCommentCount int
 		now := time.Now()
 
@@ -386,7 +386,6 @@ func main() {
 
 		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post'").Scan(&postCount)
 		db.QueryRow("SELECT COUNT(*) FROM typecho_comments").Scan(&commentCount)
-		db.QueryRow("SELECT COUNT(*) FROM typecho_metas WHERE type='category'").Scan(&categoryCount)
 		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='attachment'").Scan(&attachmentCount)
 
 		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post' AND created >= ?", weekStart).Scan(&weekPostCount)
@@ -520,7 +519,6 @@ func main() {
 			"CommentCount":         commentCount,
 			"WeekPostCount":        weekPostCount,
 			"WeekCommentCount":     weekCommentCount,
-			"CategoryCount":        categoryCount,
 			"AttachmentCount":      attachmentCount,
 			"TodayPV":              todayPV,
 			"TodayIP":              todayHumanIP,
