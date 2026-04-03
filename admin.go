@@ -1075,7 +1075,7 @@ func main() {
 		var total int
 		db.QueryRow("SELECT COUNT(*) FROM typecho_comments").Scan(&total)
 
-		rows, err := db.Query("SELECT coid, cid, author, text, status, created FROM typecho_comments ORDER BY created DESC LIMIT ? OFFSET ?", pageSize, offset)
+		rows, err := db.Query("SELECT coid, cid, parent, author, text, status, created FROM typecho_comments ORDER BY created DESC, coid DESC LIMIT ? OFFSET ?", pageSize, offset)
 		if err != nil {
 			c.String(500, err.Error())
 			return
@@ -1084,18 +1084,29 @@ func main() {
 
 		var comments []map[string]interface{}
 		for rows.Next() {
-			var coid, cid int
+			var coid, cid, parent int
 			var author, text, status string
 			var created int64
-			rows.Scan(&coid, &cid, &author, &text, &status, &created)
+			rows.Scan(&coid, &cid, &parent, &author, &text, &status, &created)
 			comments = append(comments, map[string]interface{}{
 				"Coid":    coid,
 				"Cid":     cid,
+				"Parent":  parent,
 				"Author":  author,
 				"Text":    text,
 				"Status":  status,
 				"Created": time.Unix(created, 0).Format("2006-01-02 15:04"),
 			})
+		}
+
+		for _, comment := range comments {
+			if parent, ok := comment["Parent"].(int); ok && parent > 0 {
+				var parentAuthor string
+				db.QueryRow("SELECT author FROM typecho_comments WHERE coid=?", parent).Scan(&parentAuthor)
+				if parentAuthor != "" {
+					comment["ParentAuthor"] = parentAuthor
+				}
+			}
 		}
 
 		totalPages := (total + pageSize - 1) / pageSize
@@ -1291,6 +1302,42 @@ func main() {
 		db.Exec("DELETE FROM typecho_comments WHERE coid=?", coid)
 		db.Exec("UPDATE typecho_contents SET commentsNum = MAX(0, commentsNum - 1) WHERE cid=?", cid)
 		c.Redirect(http.StatusFound, ""+adminPath+"/comments")
+	})
+
+	admin.POST("/comment/reply/:coid", writeProtectMiddleware, func(c *gin.Context) {
+		coid := c.Param("coid")
+		content := strings.TrimSpace(c.PostForm("text"))
+		if content == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "回复内容不能为空"})
+			return
+		}
+
+		var cid, ownerId int
+		if err := db.QueryRow("SELECT cid, ownerId FROM typecho_comments WHERE coid=?", coid).Scan(&cid, &ownerId); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "评论不存在"})
+			return
+		}
+
+		username, _ := c.Get("username")
+		var authorId int
+		var authorName, screenName string
+		db.QueryRow("SELECT uid, name, COALESCE(screenName, '') FROM typecho_users WHERE name=?", username).Scan(&authorId, &authorName, &screenName)
+		if screenName == "" {
+			screenName = authorName
+		}
+
+		now := time.Now().Unix()
+		_, err := db.Exec(`
+			INSERT INTO typecho_comments (cid, created, author, authorId, ownerId, ip, agent, text, type, status, parent)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'comment', 'approved', ?)`,
+			cid, now, screenName, authorId, ownerId, c.ClientIP(), c.Request.UserAgent(), content, coid)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+
+		db.Exec("UPDATE typecho_contents SET commentsNum = commentsNum + 1 WHERE cid = ?", cid)
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "回复已发布"})
 	})
 
 	admin.POST("/post/delete/:cid", writeProtectMiddleware, func(c *gin.Context) {

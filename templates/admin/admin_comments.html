@@ -256,6 +256,88 @@
             color: #9f1239;
         }
 
+        .icon-action-btn.reply {
+            border-color: #dbeafe;
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .icon-action-btn.reply:hover {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            color: #1d4ed8;
+        }
+
+        .reply-meta {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .reply-modal-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        .reply-modal {
+            width: min(560px, calc(100vw - 32px));
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+            padding: 20px;
+        }
+
+        .reply-modal h3 {
+            margin: 0 0 16px;
+            color: #0f172a;
+        }
+
+        .reply-modal textarea {
+            width: 100%;
+            min-height: 140px;
+            box-sizing: border-box;
+            border: 1px solid #dbe4ea;
+            border-radius: 10px;
+            padding: 12px;
+            font: inherit;
+            resize: vertical;
+            outline: none;
+        }
+
+        .reply-modal textarea:focus {
+            border-color: #0984e3;
+            box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.12);
+        }
+
+        .reply-modal-actions {
+            margin-top: 14px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .reply-modal-actions button {
+            border: none;
+            border-radius: 8px;
+            padding: 9px 14px;
+            cursor: pointer;
+        }
+
+        .reply-cancel {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .reply-submit {
+            background: #0984e3;
+            color: #fff;
+        }
+
         .status-waiting {
             color: #f59e0b;
             font-weight: bold;
@@ -460,6 +542,9 @@
                         <div style="max-width: 500px; line-height: 1.5; color: #636e72;">
                             {{substring .Text 80}}
                         </div>
+                        {{if gt .Parent 0}}
+                        <div class="reply-meta">回复自：{{if .ParentAuthor}}{{.ParentAuthor}}{{else}}原评论{{end}}</div>
+                        {{end}}
                     </td>
                     <td style="color: #b2bec3; font-size: 12px;">{{.Created}}</td>
                     <td>
@@ -471,6 +556,10 @@
                     </td>
                     <td>
                         <div class="action-group">
+                            <button type="button" class="icon-action-btn reply" title="回复" aria-label="回复"
+                                onclick="openReplyModal({{.Coid}}, '{{js .Author}}')">
+                                <i class="fas fa-reply"></i>
+                            </button>
                             <form action="{{adminPath}}/comment/delete/{{.Coid}}" method="POST"
                                 onsubmit="return confirm('确定删除此评论？')">
                                 <button type="submit" class="icon-action-btn delete" title="删除" aria-label="删除">
@@ -566,6 +655,18 @@
         </script>
         {{end}}
     </div>
+    <div class="reply-modal-mask" id="replyModalMask" onclick="closeReplyModal(event)">
+        <div class="reply-modal" onclick="event.stopPropagation()">
+            <h3 id="replyModalTitle">回复评论</h3>
+            <form id="replyForm" method="post">
+                <textarea id="replyText" name="text" placeholder="请输入回复内容" required></textarea>
+                <div class="reply-modal-actions">
+                    <button type="button" class="reply-cancel" onclick="closeReplyModal()">取消</button>
+                    <button type="submit" class="reply-submit">发送回复</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <script>
         function toggleStatus(coid, checkbox) {
             const originalChecked = !checkbox.checked;
@@ -585,6 +686,45 @@
                     checkbox.checked = originalChecked;
                 });
         }
+
+        function openReplyModal(coid, author) {
+            const mask = document.getElementById('replyModalMask');
+            const form = document.getElementById('replyForm');
+            const title = document.getElementById('replyModalTitle');
+            const textarea = document.getElementById('replyText');
+            form.action = '{{adminPath}}/comment/reply/' + coid;
+            title.textContent = '回复 ' + author;
+            textarea.value = '';
+            mask.style.display = 'flex';
+            textarea.focus();
+        }
+
+        function closeReplyModal(event) {
+            if (event && event.target !== event.currentTarget) {
+                return;
+            }
+            document.getElementById('replyModalMask').style.display = 'none';
+        }
+
+        document.getElementById('replyForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            fetch(form.action, {
+                method: 'POST',
+                body: data
+            }).then(function (response) {
+                return response.json();
+            }).then(function (data) {
+                if (!data.success) {
+                    alert(data.message || '回复失败');
+                    return;
+                }
+                window.location.reload();
+            }).catch(function () {
+                alert('网络错误');
+            });
+        });
     </script>
 </body>
 

@@ -29,6 +29,35 @@
     <link rel="stylesheet" href="/blog/usr/themes/default/style.css">
     <link rel="stylesheet" href="/blog/usr/themes/default/go-custom.css">
     <link rel="stylesheet" href="/blog/usr/themes/default/css/font-awesome.min.css">
+    <style>
+        .comment-list .comment-list {
+            margin-top: 16px;
+            margin-left: 28px;
+            padding-left: 16px;
+            border-left: 2px solid #e2e8f0;
+        }
+
+        .comment-list .comment-list .comment-body {
+            margin-top: 12px;
+            padding: 12px 14px;
+            background: #f8fafc;
+            border-radius: 10px;
+        }
+
+        .comment-reply-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            color: #2563eb;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .comment-reply-label i {
+            font-size: 12px;
+        }
+    </style>
 </head>
 
 <body>
@@ -107,15 +136,7 @@
                         <h3>已有 {{len .Comments}} 条评论</h3>
                         <ol class="comment-list">
                             {{range .Comments}}
-                            <li class="comment-body">
-                                <div class="comment-author">
-                                    <span class="fn">{{.Author}}</span>
-                                </div>
-                                <div class="comment-meta">
-                                    <a href="#">{{formatDate .Created}}</a>
-                                </div>
-                                <div class="comment-content">{{.Text}}</div>
-                            </li>
+                            {{template "comment-node" .}}
                             {{end}}
                         </ol>
                         {{else}}
@@ -200,5 +221,27 @@
     <script src="/blog/usr/themes/default/js/theme-mode.js"></script>
     {{.Site.FooterCode}}
 </body>
+
+{{define "comment-node"}}
+<li class="comment-body">
+    <div class="comment-author">
+        <span class="fn">{{.Author}}</span>
+    </div>
+    <div class="comment-meta">
+        <a href="#">{{formatDate .Created}}</a>
+    </div>
+    <div class="comment-content">{{.Text}}</div>
+    {{if .ParentAuthor}}
+    <div class="comment-reply-label"><i class="fas fa-reply"></i> 回复 {{.ParentAuthor}}</div>
+    {{end}}
+    {{if .Replies}}
+    <ol class="comment-list">
+        {{range .Replies}}
+        {{template "comment-node" .}}
+        {{end}}
+    </ol>
+    {{end}}
+</li>
+{{end}}
 
 </html>

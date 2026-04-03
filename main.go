@@ -469,11 +469,14 @@ type Category struct {
 }
 
 type Comment struct {
-	Coid    int
-	Cid     int
-	Author  string
-	Text    string
-	Created int64
+	Coid         int
+	Cid          int
+	Parent       int
+	Author       string
+	ParentAuthor string
+	Text         string
+	Created      int64
+	Replies      []*Comment
 }
 
 type DateArchiveItem struct {
@@ -2287,22 +2290,42 @@ func getPostTags(db *sql.DB, cid int) []Tag {
 }
 
 func getPostComments(db *sql.DB, cid int) []Comment {
-	var comms []Comment
+	var comms []*Comment
 	rows, err := db.Query(`
-		SELECT coid, author, text, created 
+		SELECT coid, parent, author, text, created 
 		FROM typecho_comments 
 		WHERE cid = ? AND status = 'approved' AND type = 'comment' 
-		ORDER BY created ASC`, cid)
+		ORDER BY created ASC, coid ASC`, cid)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
+	commentMap := make(map[int]*Comment)
+	roots := make([]*Comment, 0)
 	for rows.Next() {
-		var c Comment
-		rows.Scan(&c.Coid, &c.Author, &c.Text, &c.Created)
+		c := &Comment{}
+		rows.Scan(&c.Coid, &c.Parent, &c.Author, &c.Text, &c.Created)
+		commentMap[c.Coid] = c
 		comms = append(comms, c)
 	}
-	return comms
+
+	for _, comment := range comms {
+		if comment.Parent <= 0 {
+			roots = append(roots, comment)
+			continue
+		}
+		if parent, ok := commentMap[comment.Parent]; ok {
+			comment.ParentAuthor = parent.Author
+			parent.Replies = append(parent.Replies, comment)
+			continue
+		}
+		roots = append(roots, comment)
+	}
+	result := make([]Comment, 0, len(roots))
+	for _, root := range roots {
+		result = append(result, *root)
+	}
+	return result
 }
 
 func getPrevNextPosts(db *sql.DB, created int64) (*Post, *Post) {
