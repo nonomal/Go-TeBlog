@@ -1304,6 +1304,32 @@ func main() {
 		c.Redirect(http.StatusFound, ""+adminPath+"/comments")
 	})
 
+	admin.POST("/comment/edit/:coid", writeProtectMiddleware, func(c *gin.Context) {
+		coid := c.Param("coid")
+		author := strings.TrimSpace(c.PostForm("author"))
+		content := strings.TrimSpace(c.PostForm("text"))
+		if author == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "作者不能为空"})
+			return
+		}
+		if content == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "评论内容不能为空"})
+			return
+		}
+
+		result, err := db.Exec("UPDATE typecho_comments SET author=?, text=? WHERE coid=?", author, content, coid)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if rows, _ := result.RowsAffected(); rows == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "评论不存在"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "评论已更新"})
+	})
+
 	admin.POST("/comment/reply/:coid", writeProtectMiddleware, func(c *gin.Context) {
 		coid := c.Param("coid")
 		content := strings.TrimSpace(c.PostForm("text"))

@@ -268,6 +268,18 @@
             color: #1d4ed8;
         }
 
+        .icon-action-btn.edit {
+            border-color: #d1fae5;
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        .icon-action-btn.edit:hover {
+            background: #d1fae5;
+            border-color: #6ee7b7;
+            color: #047857;
+        }
+
         .reply-meta {
             margin-top: 6px;
             font-size: 12px;
@@ -556,6 +568,11 @@
                     </td>
                     <td>
                         <div class="action-group">
+                            <button type="button" class="icon-action-btn edit" title="编辑" aria-label="编辑"
+                                data-coid="{{.Coid}}" data-author="{{.Author}}" data-text="{{.Text}}"
+                                onclick="openEditModal(this)">
+                                <i class="fas fa-pen"></i>
+                            </button>
                             <button type="button" class="icon-action-btn reply" title="回复" aria-label="回复"
                                 onclick="openReplyModal({{.Coid}}, '{{js .Author}}')">
                                 <i class="fas fa-reply"></i>
@@ -667,6 +684,20 @@
             </form>
         </div>
     </div>
+    <div class="reply-modal-mask" id="editModalMask" onclick="closeEditModal(event)">
+        <div class="reply-modal" onclick="event.stopPropagation()">
+            <h3 id="editModalTitle">编辑评论</h3>
+            <form id="editForm" method="post">
+                <input id="editAuthor" name="author" type="text" placeholder="请输入作者名" required
+                    style="width: 100%; box-sizing: border-box; border: 1px solid #dbe4ea; border-radius: 10px; padding: 12px; font: inherit; margin-bottom: 12px; outline: none;">
+                <textarea id="editText" name="text" placeholder="请输入评论内容" required></textarea>
+                <div class="reply-modal-actions">
+                    <button type="button" class="reply-cancel" onclick="closeEditModal()">取消</button>
+                    <button type="submit" class="reply-submit">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <script>
         function toggleStatus(coid, checkbox) {
             const originalChecked = !checkbox.checked;
@@ -699,11 +730,32 @@
             textarea.focus();
         }
 
+        function openEditModal(button) {
+            const mask = document.getElementById('editModalMask');
+            const form = document.getElementById('editForm');
+            const title = document.getElementById('editModalTitle');
+            const authorInput = document.getElementById('editAuthor');
+            const textarea = document.getElementById('editText');
+            form.action = '{{adminPath}}/comment/edit/' + button.dataset.coid;
+            title.textContent = '编辑评论';
+            authorInput.value = button.dataset.author || '';
+            textarea.value = button.dataset.text || '';
+            mask.style.display = 'flex';
+            authorInput.focus();
+        }
+
         function closeReplyModal(event) {
             if (event && event.target !== event.currentTarget) {
                 return;
             }
             document.getElementById('replyModalMask').style.display = 'none';
+        }
+
+        function closeEditModal(event) {
+            if (event && event.target !== event.currentTarget) {
+                return;
+            }
+            document.getElementById('editModalMask').style.display = 'none';
         }
 
         document.getElementById('replyForm').addEventListener('submit', function (event) {
@@ -718,6 +770,26 @@
             }).then(function (data) {
                 if (!data.success) {
                     alert(data.message || '回复失败');
+                    return;
+                }
+                window.location.reload();
+            }).catch(function () {
+                alert('网络错误');
+            });
+        });
+
+        document.getElementById('editForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            fetch(form.action, {
+                method: 'POST',
+                body: data
+            }).then(function (response) {
+                return response.json();
+            }).then(function (data) {
+                if (!data.success) {
+                    alert(data.message || '保存失败');
                     return;
                 }
                 window.location.reload();
