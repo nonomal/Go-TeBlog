@@ -738,6 +738,14 @@
                                     <span class="slider"></span>
                                 </label>
                             </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label>AI 评论检测</label>
+                                <span class="label-desc">开启后，评论提交时才会调用 AI 接口进行检测。</span>
+                                <label class="switch">
+                                    <input type="checkbox" name="commentAiDetection" value="1" {{if eq .CommentAiDetection "1"}}checked{{end}}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
                             <div class="form-group">
                                 <label>IP 频率限制 (次/分钟)</label>
                                 <input type="number" name="commentLimitIP" value="{{.CommentLimitIP}}" required min="1">

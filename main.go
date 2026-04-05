@@ -1213,7 +1213,7 @@ func main() {
 
 		// AI Spam Check
 		apiKey := getOption(db, "grokApiKey", "")
-		if apiKey != "" {
+		if getOption(db, "commentAiDetection", "0") == "1" && apiKey != "" {
 			apiUrl := getOption(db, "aiApiUrl", "https://api.groq.com/openai/v1/chat/completions")
 			model := getOption(db, "aiModel", "llama-3.3-70b-versatile")
 			threshold := getOptionInt(db, "aiThreshold", 5)

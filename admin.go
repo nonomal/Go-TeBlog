@@ -732,6 +732,7 @@ func main() {
 			"GrokApiKey":                 apiKey,
 			"AiApiUrl":                   getOption(db, "aiApiUrl", "https://api.groq.com/openai/v1/chat/completions"),
 			"AiModel":                    getOption(db, "aiModel", "llama-3.3-70b-versatile"),
+			"CommentAiDetection":         getOption(db, "commentAiDetection", "1"),
 			"DefaultCategory":            getOption(db, "defaultCategory", "1"),
 			"CommentAudit":               getOption(db, "commentAudit", "0"),
 			"CommentFailClosed":          getOption(db, "commentFailClosed", "0"),
@@ -769,6 +770,7 @@ func main() {
 		aiApiUrl := c.PostForm("aiApiUrl")
 		aiModel := c.PostForm("aiModel")
 		aiThreshold := c.PostForm("aiThreshold")
+		commentAiDetection := c.DefaultPostForm("commentAiDetection", "0")
 		sessionTimeout := c.PostForm("sessionTimeout")
 		keywords := c.PostForm("keywords")
 		footerCode := c.PostForm("footerCode")
@@ -826,6 +828,7 @@ func main() {
 		setOption(db, "aiApiUrl", aiApiUrl)
 		setOption(db, "aiModel", aiModel)
 		setOption(db, "aiThreshold", aiThreshold)
+		setOption(db, "commentAiDetection", commentAiDetection)
 		setOption(db, "sessionTimeout", sessionTimeout)
 		setOption(db, "keywords", keywords)
 		setOption(db, "footerCode", footerCode)
@@ -886,6 +889,7 @@ func main() {
 			"AiApiUrl":                   aiApiUrl,
 			"AiModel":                    aiModel,
 			"AiThreshold":                aiThreshold,
+			"CommentAiDetection":         commentAiDetection,
 			"SessionTimeout":             sessionTimeout,
 			"SiteKeywords":               keywords,
 			"FooterCode":                 footerCode,
