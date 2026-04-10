@@ -419,11 +419,57 @@ func main() {
 		db.QueryRow("SELECT COUNT(*) FROM go_stats_logs WHERE is_bot=1").Scan(&totalBotPV)
 		db.QueryRow("SELECT COUNT(DISTINCT ip) FROM go_stats_logs WHERE is_bot=1").Scan(&totalBotIP)
 
-		// 获取日志保留天数设置，用于前端标签展示
+		// 获取日志保留天数设置，用于前端标签展示与折线图范围
 		retentionStr := getOption(db, "logRetentionDays", "30")
+		retentionDays, err := strconv.Atoi(strings.TrimSpace(retentionStr))
+		if err != nil || retentionDays < 0 {
+			retentionDays = 30
+		}
 		retentionLabel := retentionStr + "天内"
-		if retentionStr == "0" {
+		if retentionDays == 0 {
 			retentionLabel = "历史累计"
+		}
+
+		trendDays := retentionDays
+		if trendDays == 0 {
+			trendDays = 30
+		}
+
+		// 访客趋势（按天去重 IP，按当前配置时区分日）
+		visitorTrendStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(trendDays - 1))
+		visitorTrendLabels := make([]string, 0, trendDays)
+		humanVisitorTrend := make([]int, 0, trendDays)
+		botVisitorTrend := make([]int, 0, trendDays)
+
+		queryVisitorCount := func(dayStart, dayEnd int64, isBot int) int {
+			var count int
+			db.QueryRow(
+				"SELECT COUNT(DISTINCT ip) FROM go_stats_logs WHERE created >= ? AND created < ? AND is_bot = ?",
+				dayStart, dayEnd, isBot,
+			).Scan(&count)
+			return count
+		}
+
+		for i := 0; i < trendDays; i++ {
+			day := visitorTrendStart.AddDate(0, 0, i)
+			visitorTrendLabels = append(visitorTrendLabels, day.Format("01-02"))
+			dayStart := day.Unix()
+			dayEnd := day.AddDate(0, 0, 1).Unix()
+			humanVisitorTrend = append(humanVisitorTrend, queryVisitorCount(dayStart, dayEnd, 0))
+			botVisitorTrend = append(botVisitorTrend, queryVisitorCount(dayStart, dayEnd, 1))
+		}
+
+		visitorTrendLabelsJSON, err := json.Marshal(visitorTrendLabels)
+		if err != nil {
+			visitorTrendLabelsJSON = []byte("[]")
+		}
+		humanVisitorTrendJSON, err := json.Marshal(humanVisitorTrend)
+		if err != nil {
+			humanVisitorTrendJSON = []byte("[]")
+		}
+		botVisitorTrendJSON, err := json.Marshal(botVisitorTrend)
+		if err != nil {
+			botVisitorTrendJSON = []byte("[]")
 		}
 
 		type cfShieldLogItem struct {
@@ -576,6 +622,10 @@ func main() {
 			"TodayBotPV":           todayBotPV,
 			"TotalBotPV":           totalBotPV,
 			"TotalBotIP":           totalBotIP,
+			"VisitorTrendLabels":   template.JS(visitorTrendLabelsJSON),
+			"HumanVisitorTrend":    template.JS(humanVisitorTrendJSON),
+			"BotVisitorTrend":      template.JS(botVisitorTrendJSON),
+			"VisitorTrendDays":     trendDays,
 			"RetentionLabel":       retentionLabel,
 			"DbSize":               dbSize,
 			"MemUsed":              memUsed + " / " + memFree,
