@@ -973,6 +973,7 @@ func main() {
 		apiKey := strings.TrimSpace(c.PostForm("grokApiKey"))
 		apiURL := strings.TrimSpace(c.PostForm("aiApiUrl"))
 		model := strings.TrimSpace(c.PostForm("aiModel"))
+		testContent := strings.TrimSpace(c.PostForm("aiTestContent"))
 		if apiKey == "" || apiURL == "" || model == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"ok":      false,
@@ -980,8 +981,11 @@ func main() {
 			})
 			return
 		}
+		if testContent == "" {
+			testContent = "这是一条正常的测试评论，用于检测评论过滤 AI 接口是否可正常调用。"
+		}
 
-		score, err := checkSpamAITestComment("这是一条正常的测试评论，用于检测评论过滤 AI 接口是否可正常调用。", apiKey, apiURL, model)
+		score, err := checkSpamAITestComment(testContent, apiKey, apiURL, model)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"ok":      false,
@@ -992,7 +996,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 			"ok":      true,
-			"message": "AI 接口连接正常，评论检测服务已就绪。",
+			"message": fmt.Sprintf("AI 接口连接正常，评论检测服务已就绪，得分：%d。", score),
 			"score":   score,
 		})
 	})
@@ -2436,7 +2440,7 @@ func extractSpamScore(content string) (int, bool) {
 
 func checkSpamAITestComment(words string, apiKey string, apiURL string, model string) (int, error) {
 	if apiKey == "" || apiURL == "" || model == "" {
-		return 0, fmt.Errorf("ai moderation config missing")
+		return 0, fmt.Errorf("AI 检测配置缺失：请填写 AI API URL、AI Model 和 AI API Key")
 	}
 
 	systemPrompt := "You are an assistant for detecting spam, advertisements, meaningless text, political content, religious content, and malicious content such as SQL injection or XSS. Score user input from 0 to 9, where 0 means safe (e.g., programming or server-related), 5 means suspicious, and 9 means confirmed spam, ads, political or religious content, attacks, or nonsense like \"asdf\", \"12345\", \"aaaa\". If the input is not in English or Chinese, score it as 9. Only return a single integer (0–9) with no explanation."
@@ -2447,24 +2451,35 @@ func checkSpamAITestComment(words string, apiKey string, apiURL string, model st
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": words},
 		},
-		"max_tokens":  1,
-		"temperature": 0.1,
+		"max_tokens":  10000,
+		"temperature": 0,
 	}
 
-	jsonData, _ := json.Marshal(requestData)
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return 0, fmt.Errorf("AI 检测请求组装失败: %w", err)
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return 0, fmt.Errorf("AI 检测请求创建失败: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("AI 检测请求发送失败: %w", err)
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("ai moderation status: %d", resp.StatusCode)
+		detail := strings.TrimSpace(string(body))
+		if detail != "" {
+			return 0, fmt.Errorf("AI 检测接口返回状态 %d: %s", resp.StatusCode, detail)
+		}
+		return 0, fmt.Errorf("AI 检测接口返回状态 %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -2472,19 +2487,31 @@ func checkSpamAITestComment(words string, apiKey string, apiURL string, model st
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			Text string `json:"text"`
 		} `json:"choices"`
+		OutputText string `json:"output_text"`
+		Text       string `json:"text"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("ai moderation decode failed")
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, fmt.Errorf("AI 检测响应解析失败: %w; 原始返回: %s", err, strings.TrimSpace(string(body)))
 	}
 	if len(result.Choices) == 0 {
-		return 0, fmt.Errorf("ai moderation response empty")
+		return 0, fmt.Errorf("AI 检测响应为空，原始返回: %s", strings.TrimSpace(string(body)))
 	}
 
 	content := strings.TrimSpace(result.Choices[0].Message.Content)
+	if content == "" {
+		content = strings.TrimSpace(result.Choices[0].Text)
+	}
+	if content == "" {
+		content = strings.TrimSpace(result.OutputText)
+	}
+	if content == "" {
+		content = strings.TrimSpace(result.Text)
+	}
 	score, ok := extractSpamScore(content)
 	if !ok {
-		return 0, fmt.Errorf("ai moderation response invalid")
+		return 0, fmt.Errorf("AI 检测响应格式不符合预期，原始返回: %s", strings.TrimSpace(string(body)))
 	}
 
 	return score, nil
