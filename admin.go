@@ -2451,7 +2451,7 @@ func checkSpamAITestComment(words string, apiKey string, apiURL string, model st
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": words},
 		},
-		"max_tokens":  10000,
+		"max_tokens":  512,
 		"temperature": 0,
 	}
 
