@@ -875,6 +875,15 @@
             const messageEl = document.getElementById('aiTestMessage');
             const contentEl = document.getElementById('aiTestContent');
             const thresholdInput = document.querySelector('input[name="aiThreshold"]');
+            const isVisitor = {{if eq .UserGroup "visitor"}}true{{else}}false{{end}};
+
+            function updateButtonState() {
+                if (!btn || !contentEl) {
+                    return;
+                }
+
+                btn.disabled = isVisitor || !contentEl.value.trim();
+            }
 
             function showResult(ok, message) {
                 titleEl.textContent = 'AI 检测结果';
@@ -917,6 +926,13 @@
             }
 
             if (btn) {
+                updateButtonState();
+
+                if (contentEl) {
+                    contentEl.addEventListener('change', updateButtonState);
+                    contentEl.addEventListener('input', updateButtonState);
+                }
+
                 btn.addEventListener('click', async function () {
                     const apiUrl = document.querySelector('input[name="aiApiUrl"]').value.trim();
                     const model = document.querySelector('input[name="aiModel"]').value.trim();
@@ -959,7 +975,7 @@
                     } catch (error) {
                         showResult(false, error && error.message ? ('请求失败：' + error.message) : '请求失败，请稍后再试。');
                     } finally {
-                        btn.disabled = false;
+                        updateButtonState();
                         btn.innerHTML = '<i class="fas fa-vial" style="margin-right: 8px;"></i>检测';
                     }
                 });
