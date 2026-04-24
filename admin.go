@@ -474,22 +474,19 @@ func main() {
 
 		// 基础统计
 		var postCount, commentCount, attachmentCount int
-		var weekPostCount, weekCommentCount int
+		var recentPostCount, recentCommentCount, recentAttachmentCount int
 		now := time.Now()
 
-		// 计算周一 00:00:00 (以周一为一周起始)
-		daysSinceMonday := int(now.Weekday()) - 1
-		if daysSinceMonday < 0 {
-			daysSinceMonday = 6 // 周日变成 6
-		}
-		weekStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -daysSinceMonday).Unix()
+		// 统计近 7 天滚动窗口（含当前时刻往前 7 天）
+		recentStart := now.AddDate(0, 0, -7).Unix()
 
 		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post'").Scan(&postCount)
 		db.QueryRow("SELECT COUNT(*) FROM typecho_comments").Scan(&commentCount)
 		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='attachment'").Scan(&attachmentCount)
 
-		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post' AND created >= ?", weekStart).Scan(&weekPostCount)
-		db.QueryRow("SELECT COUNT(*) FROM typecho_comments WHERE created >= ?", weekStart).Scan(&weekCommentCount)
+		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post' AND created >= ?", recentStart).Scan(&recentPostCount)
+		db.QueryRow("SELECT COUNT(*) FROM typecho_comments WHERE created >= ?", recentStart).Scan(&recentCommentCount)
+		db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='attachment' AND created >= ?", recentStart).Scan(&recentAttachmentCount)
 
 		// 流量统计
 		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
@@ -695,9 +692,10 @@ func main() {
 			"AdminServiceName":     adminServiceName,
 			"PostCount":            postCount,
 			"CommentCount":         commentCount,
-			"WeekPostCount":        weekPostCount,
-			"WeekCommentCount":     weekCommentCount,
+			"RecentPostCount":      recentPostCount,
+			"RecentCommentCount":   recentCommentCount,
 			"AttachmentCount":      attachmentCount,
+			"RecentAttachmentCount": recentAttachmentCount,
 			"TodayPV":              todayPV,
 			"TodayIP":              todayHumanIP,
 			"TodayBotIP":           todayBotIP,
