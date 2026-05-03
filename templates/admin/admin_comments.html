@@ -286,6 +286,41 @@
             color: #64748b;
         }
 
+        .comment-post-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            max-width: 500px;
+            margin-bottom: 6px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .comment-post-meta i {
+            color: #0984e3;
+            flex: 0 0 auto;
+        }
+
+        .comment-post-meta a {
+            min-width: 0;
+            color: #0984e3;
+            font-weight: 600;
+            text-decoration: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .comment-post-meta a:hover {
+            color: #076bb8;
+            text-decoration: underline;
+        }
+
+        .comment-post-missing {
+            color: #94a3b8;
+        }
+
         .reply-modal-mask {
             position: fixed;
             inset: 0;
@@ -511,6 +546,14 @@
                 <tr>
                     <td><strong style="color: #2d3436;">{{.Author}}</strong></td>
                     <td title="{{.Text}}">
+                        <div class="comment-post-meta" title="{{if .PostTitle}}{{.PostTitle}}{{else}}主贴已删除{{end}}">
+                            <i class="fas fa-file-alt"></i>
+                            {{if .PostTitle}}
+                            <a href="/blog/index.php/archives/{{.Cid}}/" target="_blank">{{.PostTitle}}</a>
+                            {{else}}
+                            <span class="comment-post-missing">主贴已删除</span>
+                            {{end}}
+                        </div>
                         <div style="max-width: 500px; line-height: 1.5; color: #636e72;">
                             {{substring .Text 80}}
                         </div>

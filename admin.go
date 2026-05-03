@@ -1314,7 +1314,12 @@ func main() {
 		var total int
 		db.QueryRow("SELECT COUNT(*) FROM typecho_comments").Scan(&total)
 
-		rows, err := db.Query("SELECT coid, cid, parent, author, text, status, created FROM typecho_comments ORDER BY created DESC, coid DESC LIMIT ? OFFSET ?", pageSize, offset)
+		rows, err := db.Query(`
+			SELECT c.coid, c.cid, c.parent, c.author, c.text, c.status, c.created, COALESCE(p.title, '')
+			FROM typecho_comments c
+			LEFT JOIN typecho_contents p ON p.cid = c.cid AND p.type = 'post'
+			ORDER BY c.created DESC, c.coid DESC
+			LIMIT ? OFFSET ?`, pageSize, offset)
 		if err != nil {
 			c.String(500, err.Error())
 			return
@@ -1324,17 +1329,18 @@ func main() {
 		var comments []map[string]interface{}
 		for rows.Next() {
 			var coid, cid, parent int
-			var author, text, status string
+			var author, text, status, postTitle string
 			var created int64
-			rows.Scan(&coid, &cid, &parent, &author, &text, &status, &created)
+			rows.Scan(&coid, &cid, &parent, &author, &text, &status, &created, &postTitle)
 			comments = append(comments, map[string]interface{}{
-				"Coid":    coid,
-				"Cid":     cid,
-				"Parent":  parent,
-				"Author":  author,
-				"Text":    text,
-				"Status":  status,
-				"Created": time.Unix(created, 0).Format("2006-01-02 15:04"),
+				"Coid":      coid,
+				"Cid":       cid,
+				"Parent":    parent,
+				"Author":    author,
+				"Text":      text,
+				"Status":    status,
+				"Created":   time.Unix(created, 0).Format("2006-01-02 15:04"),
+				"PostTitle": postTitle,
 			})
 		}
 
