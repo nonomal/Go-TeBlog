@@ -755,6 +755,14 @@
                                 <input type="number" name="cfShieldAutoDisableMinutes" value="{{.CfShieldAutoDisableMinutes}}"
                                     min="1" required>
                             </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label>自动拉黑高频 IP</label>
+                                <span class="label-desc">触发后拉黑命中 >= max(阈值/10, 30) 的前 10 个 IP。</span>
+                                <label class="switch">
+                                    <input type="checkbox" name="cfShieldAutoBlockIP" value="1" {{if eq .CfShieldAutoBlockIP "1"}}checked{{end}}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
                             <div class="form-group">
                                 <label>Cloudflare API Token</label>
                                 <span class="label-desc">Token 或 Global API Key。</span>

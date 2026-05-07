@@ -890,6 +890,7 @@ func main() {
 			"CfZoneID":                   cfZoneID,
 			"CfRestoreSecurityLevel":     getOption(db, "cfRestoreSecurityLevel", "medium"),
 			"CfShieldAutoDisableMinutes": getOption(db, "cfShieldAutoDisableMinutes", "30"),
+			"CfShieldAutoBlockIP":        getOption(db, "cfShieldAutoBlockIP", "0"),
 			"CfEnvConnected":             cfEnvConnected,
 			"CfEnvStatus":                cfEnvStatus,
 			"AllCategories":              categories,
@@ -1017,6 +1018,7 @@ func main() {
 		cfZoneID := strings.TrimSpace(c.PostForm("cfZoneID"))
 		cfRestoreSecurityLevel := strings.TrimSpace(c.PostForm("cfRestoreSecurityLevel"))
 		cfShieldAutoDisableMinutes := strings.TrimSpace(c.PostForm("cfShieldAutoDisableMinutes"))
+		cfShieldAutoBlockIP := c.DefaultPostForm("cfShieldAutoBlockIP", "0")
 		if cfRequestLimitPerMinute == "" {
 			cfRequestLimitPerMinute = "1000"
 		}
@@ -1070,6 +1072,7 @@ func main() {
 		setOption(db, "cfZoneID", cfZoneID)
 		setOption(db, "cfRestoreSecurityLevel", cfRestoreSecurityLevel)
 		setOption(db, "cfShieldAutoDisableMinutes", cfShieldAutoDisableMinutes)
+		setOption(db, "cfShieldAutoBlockIP", cfShieldAutoBlockIP)
 		applyConfiguredTimezone(db)
 
 		successMsg := "设置保存成功"
