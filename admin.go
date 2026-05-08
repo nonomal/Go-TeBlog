@@ -45,6 +45,11 @@ type cloudflareAccessLogItem struct {
 	Status   int    `json:"status"`
 }
 
+type cfBlockedIPRule struct {
+	IP     string `json:"ip"`
+	RuleID string `json:"rule_id"`
+}
+
 type SkinConfig struct {
 	Theme               string
 	ThemeBase           string
@@ -214,10 +219,15 @@ func main() {
 		ip VARCHAR(64),
 		path VARCHAR(255),
 		ua VARCHAR(511),
+		blocked_ips TEXT,
 		created INTEGER
 	)`)
 	if err != nil {
 		log.Fatal("Failed to create Cloudflare shield logs table:", err)
+	}
+	_, err = db.Exec(`ALTER TABLE go_cf_shield_logs ADD COLUMN blocked_ips TEXT`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		log.Fatal("Failed to update Cloudflare shield logs table:", err)
 	}
 
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_cf_shield_logs_created ON go_cf_shield_logs (created)`)
@@ -561,11 +571,13 @@ func main() {
 		}
 
 		type cfShieldLogItem struct {
-			IP        string
-			Path      string
-			Created   int64
-			CreatedAt string
-			UA        string
+			ID         int64
+			IP         string
+			Path       string
+			Created    int64
+			CreatedAt  string
+			UA         string
+			BlockedIPs string
 		}
 
 		var cfShieldLogCount int
@@ -576,13 +588,13 @@ func main() {
 		db.QueryRow("SELECT COUNT(*) FROM go_cf_shield_logs").Scan(&cfShieldLogCount)
 		db.QueryRow("SELECT COALESCE(ip, ''), COALESCE(created, 0) FROM go_cf_shield_logs ORDER BY created DESC, id DESC LIMIT 1").Scan(&latestCfShieldIP, &latestCfShieldCreated)
 
-		rows, err := db.Query("SELECT COALESCE(ip, ''), COALESCE(path, '/'), COALESCE(ua, ''), created FROM go_cf_shield_logs ORDER BY created DESC, id DESC LIMIT 10")
+		rows, err := db.Query("SELECT id, COALESCE(ip, ''), COALESCE(path, '/'), COALESCE(ua, ''), COALESCE(blocked_ips, ''), created FROM go_cf_shield_logs ORDER BY created DESC, id DESC LIMIT 10")
 		if err == nil {
 			defer rows.Close()
 			for rows.Next() {
 				var item cfShieldLogItem
 				var created int64
-				if err := rows.Scan(&item.IP, &item.Path, &item.UA, &created); err == nil {
+				if err := rows.Scan(&item.ID, &item.IP, &item.Path, &item.UA, &item.BlockedIPs, &created); err == nil {
 					item.Created = created
 					item.CreatedAt = time.Unix(created, 0).Format("2006-01-02 15:04:05")
 					cfShieldLogs = append(cfShieldLogs, item)
@@ -1150,6 +1162,88 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"ok":       true,
 			"analysis": analysis,
+		})
+	})
+
+	admin.POST("/dashboard/cloudflare-unblock-ips", writeProtectMiddleware, func(c *gin.Context) {
+		var req struct {
+			LogID int64 `json:"log_id"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || req.LogID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"ok":      false,
+				"message": "日志参数不完整。",
+			})
+			return
+		}
+
+		var blockedIPsText string
+		if err := db.QueryRow("SELECT COALESCE(blocked_ips, '') FROM go_cf_shield_logs WHERE id = ?", req.LogID).Scan(&blockedIPsText); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "未找到对应五秒盾日志。",
+			})
+			return
+		}
+
+		blockedRules, err := parseCloudflareBlockedRules(blockedIPsText)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": err.Error(),
+			})
+			return
+		}
+		if len(blockedRules) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      true,
+				"message": "当前没有需要解除的黑名单 IP。",
+			})
+			return
+		}
+
+		apiToken := strings.TrimSpace(getOption(db, "cfApiToken", ""))
+		authEmail := strings.TrimSpace(getOption(db, "cfAuthEmail", ""))
+		zoneID := strings.TrimSpace(getOption(db, "cfZoneID", ""))
+		if apiToken == "" || zoneID == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "当前系统未设置 Cloudflare API Token 或 Zone ID。",
+			})
+			return
+		}
+
+		failedRules := unblockCloudflareBlockedRules(apiToken, authEmail, zoneID, blockedRules)
+		failedRulesJSON, err := json.Marshal(failedRules)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "解除结果序列化失败。",
+			})
+			return
+		}
+
+		if _, err := db.Exec("UPDATE go_cf_shield_logs SET blocked_ips = ? WHERE id = ?", string(failedRulesJSON), req.LogID); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "解除成功，但本地日志更新失败。",
+			})
+			return
+		}
+
+		if len(failedRules) > 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":          false,
+				"message":     "部分 IP 解除失败。",
+				"blocked_ips": failedRules,
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"ok":          true,
+			"message":     "已解除这批 Cloudflare 黑名单 IP。",
+			"blocked_ips": []string{},
 		})
 	})
 
@@ -2771,6 +2865,89 @@ func analyzeCloudflareAttackType(apiKey, apiURL, model string, logs []cloudflare
 		return "", fmt.Errorf("AI 攻击类型说明为空")
 	}
 	return content, nil
+}
+
+func parseCloudflareBlockedRules(value string) ([]cfBlockedIPRule, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return []cfBlockedIPRule{}, nil
+	}
+
+	var rules []cfBlockedIPRule
+	if err := json.Unmarshal([]byte(value), &rules); err != nil {
+		return nil, fmt.Errorf("黑名单 IP 数据格式错误")
+	}
+
+	cleaned := make([]cfBlockedIPRule, 0, len(rules))
+	for _, rule := range rules {
+		rule.IP = strings.TrimSpace(rule.IP)
+		rule.RuleID = strings.TrimSpace(rule.RuleID)
+		if rule.IP == "" || rule.RuleID == "" {
+			return nil, fmt.Errorf("黑名单 IP 数据缺少规则 ID")
+		}
+		cleaned = append(cleaned, rule)
+	}
+	return cleaned, nil
+}
+
+func unblockCloudflareBlockedRules(apiToken, authEmail, zoneID string, rules []cfBlockedIPRule) []cfBlockedIPRule {
+	failedRules := make([]cfBlockedIPRule, 0)
+	for _, rule := range rules {
+		if err := deleteCloudflareAccessRule(apiToken, authEmail, zoneID, rule.RuleID); err != nil {
+			log.Printf("Cloudflare 五秒盾解除黑名单 IP 失败: %s: %v", rule.IP, err)
+			failedRules = append(failedRules, rule)
+		} else {
+			log.Printf("Cloudflare 五秒盾已解除黑名单 IP: %s", rule.IP)
+		}
+	}
+	return failedRules
+}
+
+func deleteCloudflareAccessRule(apiToken, authEmail, zoneID, ruleID string) error {
+	endpoint := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/firewall/access_rules/rules/%s", zoneID, ruleID)
+	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("构建 Cloudflare 黑名单解除请求失败: %w", err)
+	}
+	setCloudflareAuthHeaders(req, apiToken, authEmail)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Cloudflare 黑名单解除请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Cloudflare 黑名单解除返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var apiResp struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err == nil {
+		if !apiResp.Success {
+			if len(apiResp.Errors) > 0 && apiResp.Errors[0].Message != "" {
+				return fmt.Errorf("Cloudflare 黑名单解除错误: %s", apiResp.Errors[0].Message)
+			}
+			return fmt.Errorf("Cloudflare 黑名单解除失败: %s", strings.TrimSpace(string(body)))
+		}
+	}
+	return nil
+}
+
+func setCloudflareAuthHeaders(req *http.Request, apiToken, authEmail string) {
+	if authEmail != "" {
+		req.Header.Set("X-Auth-Email", authEmail)
+		req.Header.Set("X-Auth-Key", apiToken)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+apiToken)
+	}
+	req.Header.Set("Content-Type", "application/json")
 }
 
 func queryCloudflareAccessLogs(apiToken, authEmail, zoneID, ip string, created int64) ([]cloudflareAccessLogItem, error) {

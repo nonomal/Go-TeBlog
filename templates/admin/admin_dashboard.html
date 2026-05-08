@@ -665,6 +665,105 @@
             line-height: 1.5;
         }
 
+        .cf-blocked-ip-note {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border: 1px solid #c7f0dd;
+            border-radius: 8px;
+            background: #f0fdf4;
+            color: #064e3b;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .cf-blocked-ip-label {
+            font-weight: 700;
+            color: #10b981;
+            margin-right: 6px;
+        }
+
+        .cf-blocked-ip-list {
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .cf-unblock-btn {
+            margin-left: auto;
+            border: 1px solid #10b981;
+            background: #ffffff;
+            color: #047857;
+            border-radius: 6px;
+            padding: 5px 9px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            line-height: 1;
+        }
+
+        .cf-unblock-btn:hover {
+            background: #ecfdf5;
+        }
+
+        .cf-unblock-btn:disabled {
+            cursor: not-allowed;
+            opacity: .65;
+        }
+
+        .confirm-panel {
+            width: min(420px, 100%);
+        }
+
+        .confirm-body {
+            padding: 22px;
+        }
+
+        .confirm-text {
+            margin: 0;
+            color: #1e293b;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .confirm-cancel,
+        .confirm-submit {
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .confirm-cancel {
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+        }
+
+        .confirm-submit {
+            border: 1px solid #10b981;
+            background: #10b981;
+            color: #ffffff;
+        }
+
+        .confirm-cancel:hover {
+            background: #f8fafc;
+        }
+
+        .confirm-submit:hover {
+            background: #059669;
+        }
+
         @media (max-width: 960px) {
             .dashboard-grid {
                 grid-template-columns: 1fr;
@@ -883,7 +982,7 @@
                             <td>{{.IP}}</td>
                             <td>{{.CreatedAt}}</td>
                             <td>{{.Path}}</td>
-                            <td><button type="button" class="shield-log-action" data-ip="{{.IP}}" data-created="{{.Created}}"><i class="fas fa-search"></i><span>查询</span></button></td>
+                            <td><button type="button" class="shield-log-action" data-log-id="{{.ID}}" data-ip="{{.IP}}" data-created="{{.Created}}" data-blocked-ips="{{.BlockedIPs}}"><i class="fas fa-search"></i><span>查询</span></button></td>
                         </tr>
                         {{end}}
                     </tbody>
@@ -902,6 +1001,21 @@
             </div>
             <div class="modal-body access-log-scroll" id="cf-access-log-body">
                 <div class="shield-log-empty">正在查询 Cloudflare 日志...</div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="cf-unblock-confirm-modal">
+        <div class="modal-panel confirm-panel">
+            <div class="modal-header">
+                <h3>解除黑名单</h3>
+                <button type="button" class="modal-close" id="cf-unblock-confirm-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="confirm-body">
+                <p class="confirm-text">确认将这批 IP 从 Cloudflare 黑名单中解除？</p>
+                <div class="confirm-actions">
+                    <button type="button" class="confirm-cancel" id="cf-unblock-confirm-cancel">取消</button>
+                    <button type="button" class="confirm-submit" id="cf-unblock-confirm-submit">确认解除</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1081,7 +1195,14 @@
         const cfAccessLogClose = document.getElementById('cf-access-log-close');
         const cfAccessLogTitle = document.getElementById('cf-access-log-title');
         const cfAccessLogBody = document.getElementById('cf-access-log-body');
+        const cfUnblockConfirmModal = document.getElementById('cf-unblock-confirm-modal');
+        const cfUnblockConfirmClose = document.getElementById('cf-unblock-confirm-close');
+        const cfUnblockConfirmCancel = document.getElementById('cf-unblock-confirm-cancel');
+        const cfUnblockConfirmSubmit = document.getElementById('cf-unblock-confirm-submit');
         let cfAccessLogAnalysisNode = null;
+        let cfBlockedIPNode = null;
+        let cfActiveLogButton = null;
+        let cfPendingUnblock = null;
 
         function setAccessLogMessage(message) {
             cfAccessLogBody.innerHTML = '';
@@ -1124,6 +1245,119 @@
             cfAccessLogAnalysisNode = null;
         }
 
+        function renderBlockedIPs(blockedIPs, logID) {
+            if (cfBlockedIPNode && cfBlockedIPNode.parentNode) {
+                cfBlockedIPNode.parentNode.removeChild(cfBlockedIPNode);
+            }
+            cfBlockedIPNode = null;
+
+            let blockedRules = [];
+            try {
+                blockedRules = JSON.parse(blockedIPs || '[]');
+            } catch (error) {
+                blockedRules = [];
+            }
+            const ips = Array.isArray(blockedRules)
+                ? blockedRules.map(item => String(item && item.ip ? item.ip : '').trim()).filter(Boolean)
+                : [];
+            if (ips.length === 0 || !cfAccessLogBody) {
+                return;
+            }
+
+            cfBlockedIPNode = document.createElement('div');
+            cfBlockedIPNode.className = 'cf-blocked-ip-note';
+
+            const label = document.createElement('span');
+            label.className = 'cf-blocked-ip-label';
+            label.textContent = '已加黑名单IP';
+            cfBlockedIPNode.appendChild(label);
+
+            const list = document.createElement('span');
+            list.className = 'cf-blocked-ip-list';
+            list.textContent = ips.join('、');
+            cfBlockedIPNode.appendChild(list);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'cf-unblock-btn';
+            button.textContent = '解除黑名单';
+            button.addEventListener('click', function () {
+                openUnblockConfirm(logID, button);
+            });
+            cfBlockedIPNode.appendChild(button);
+
+            cfAccessLogBody.insertBefore(cfBlockedIPNode, cfAccessLogBody.firstChild);
+        }
+
+        function openUnblockConfirm(logID, button) {
+            if (!cfUnblockConfirmModal) {
+                unblockBlockedIPs(logID, button);
+                return;
+            }
+            cfPendingUnblock = { logID: logID, button: button };
+            cfUnblockConfirmModal.classList.add('active');
+        }
+
+        function closeUnblockConfirm() {
+            if (cfUnblockConfirmModal) {
+                cfUnblockConfirmModal.classList.remove('active');
+            }
+            cfPendingUnblock = null;
+        }
+
+        async function unblockBlockedIPs(logID, button) {
+            if (!logID || !button) {
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = '解除中...';
+
+            try {
+                const response = await fetch(`{{adminPath}}/dashboard/cloudflare-unblock-ips`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ log_id: Number(logID) })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.message || '解除黑名单失败');
+                }
+
+                if (cfActiveLogButton) {
+                    cfActiveLogButton.dataset.blockedIps = '';
+                }
+                if (cfBlockedIPNode && cfBlockedIPNode.parentNode) {
+                    cfBlockedIPNode.parentNode.removeChild(cfBlockedIPNode);
+                }
+                cfBlockedIPNode = null;
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = '解除黑名单';
+                alert(error.message || '解除黑名单失败');
+            }
+        }
+
+        if (cfUnblockConfirmModal && cfUnblockConfirmClose && cfUnblockConfirmCancel && cfUnblockConfirmSubmit) {
+            cfUnblockConfirmClose.addEventListener('click', closeUnblockConfirm);
+            cfUnblockConfirmCancel.addEventListener('click', closeUnblockConfirm);
+            cfUnblockConfirmSubmit.addEventListener('click', function () {
+                const pending = cfPendingUnblock;
+                closeUnblockConfirm();
+                if (pending) {
+                    unblockBlockedIPs(pending.logID, pending.button);
+                }
+            });
+            cfUnblockConfirmModal.addEventListener('click', function (event) {
+                if (event.target === cfUnblockConfirmModal) {
+                    closeUnblockConfirm();
+                }
+            });
+        }
+
         async function fetchAccessLogAnalysis(logs) {
             if (!Array.isArray(logs) || logs.length === 0) {
                 return;
@@ -1150,9 +1384,10 @@
             }
         }
 
-        function renderAccessLogs(logs) {
+        function renderAccessLogs(logs, blockedIPs, logID) {
             cfAccessLogBody.innerHTML = '';
             clearAccessLogAnalysis();
+            cfBlockedIPNode = null;
             if (!Array.isArray(logs) || logs.length === 0) {
                 setAccessLogMessage('这个时间段内没有查到访问记录。');
                 return;
@@ -1191,13 +1426,17 @@
             });
             table.appendChild(tbody);
             cfAccessLogBody.appendChild(table);
+            renderBlockedIPs(blockedIPs, logID);
         }
 
         if (cfAccessLogModal && cfAccessLogClose && cfAccessLogTitle && cfAccessLogBody) {
             document.querySelectorAll('.shield-log-action').forEach(button => {
                 button.addEventListener('click', async function () {
+                    cfActiveLogButton = this;
+                    const logID = this.dataset.logId || '';
                     const ip = this.dataset.ip || '';
                     const created = this.dataset.created || '';
+                    const blockedIPs = this.dataset.blockedIps || '';
                     cfAccessLogTitle.textContent = `Cloudflare 访问明细：${ip}`;
                     cfAccessLogModal.classList.add('active');
                     setAccessLogMessage('正在查询 Cloudflare 日志...');
@@ -1210,7 +1449,7 @@
                         if (!response.ok || !data.ok) {
                             throw new Error(data.message || 'Cloudflare 日志查询失败');
                         }
-                        renderAccessLogs(data.logs);
+                        renderAccessLogs(data.logs, blockedIPs, logID);
                         fetchAccessLogAnalysis(data.logs);
                     } catch (error) {
                         setAccessLogMessage(error.message || 'Cloudflare 日志查询失败');

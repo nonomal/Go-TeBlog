@@ -87,6 +87,11 @@ type cfBlockCandidate struct {
 	Hits int
 }
 
+type cfBlockedIPRule struct {
+	IP     string `json:"ip"`
+	RuleID string `json:"rule_id"`
+}
+
 func newCloudflareShieldManager(db *sql.DB) *cloudflareShieldManager {
 	mgr := &cloudflareShieldManager{
 		db:               db,
@@ -278,13 +283,16 @@ func (m *cloudflareShieldManager) enableShield(triggerIP, triggerPath string, bl
 	setOption(m.db, "cfShieldActive", "1")
 	setOption(m.db, "cfShieldUntil", strconv.FormatInt(expiresAt, 10))
 	setOption(m.db, "cfShieldActivatedAt", strconv.FormatInt(now, 10))
+	logID := int64(0)
 	if strings.TrimSpace(triggerIP) != "" {
 		if strings.TrimSpace(triggerPath) == "" {
 			triggerPath = "/"
 		}
-		_, err = m.db.Exec("INSERT INTO go_cf_shield_logs (ip, path, ua, created) VALUES (?, ?, ?, ?)", triggerIP, triggerPath, "threshold-trigger", now)
+		res, err := m.db.Exec("INSERT INTO go_cf_shield_logs (ip, path, ua, blocked_ips, created) VALUES (?, ?, ?, ?, ?)", triggerIP, triggerPath, "threshold-trigger", "", now)
 		if err != nil {
 			log.Printf("Cloudflare 五秒盾触发日志写入失败: %v", err)
+		} else if res != nil {
+			logID, _ = res.LastInsertId()
 		}
 	}
 	log.Printf("Cloudflare 五秒盾已开启，预计关闭时间: %s", time.Unix(expiresAt, 0).Format("2006-01-02 15:04:05"))
@@ -296,20 +304,32 @@ func (m *cloudflareShieldManager) enableShield(triggerIP, triggerPath string, bl
 	m.mu.Unlock()
 
 	if autoBlockIP && len(blockCandidates) > 0 {
-		go blockCloudflareIPs(token, authEmail, zoneID, blockCandidates)
+		go blockCloudflareIPs(m.db, logID, token, authEmail, zoneID, blockCandidates)
 	}
 }
 
-func blockCloudflareIPs(token, authEmail, zoneID string, candidates []cfBlockCandidate) {
+func blockCloudflareIPs(db *sql.DB, logID int64, token, authEmail, zoneID string, candidates []cfBlockCandidate) {
+	blockedRules := make([]cfBlockedIPRule, 0, len(candidates))
 	for i, candidate := range candidates {
 		if i > 0 {
 			time.Sleep(time.Second)
 		}
-		err := blockCloudflareIP(token, authEmail, zoneID, candidate.IP, fmt.Sprintf("Go-TeBlog 五秒盾自动拉黑: %d 次 / %s", candidate.Hits, candidate.Path))
+		ruleID, err := blockCloudflareIP(token, authEmail, zoneID, candidate.IP, fmt.Sprintf("Go-TeBlog 五秒盾自动拉黑: %d 次 / %s", candidate.Hits, candidate.Path))
 		if err != nil {
 			log.Printf("Cloudflare 五秒盾自动拉黑 IP 失败: %s: %v", candidate.IP, err)
 		} else {
+			blockedRules = append(blockedRules, cfBlockedIPRule{IP: candidate.IP, RuleID: ruleID})
 			log.Printf("Cloudflare 五秒盾已自动拉黑 IP: %s，分钟命中: %d", candidate.IP, candidate.Hits)
+		}
+	}
+	if db != nil && logID > 0 && len(blockedRules) > 0 {
+		blockedRulesJSON, err := json.Marshal(blockedRules)
+		if err != nil {
+			log.Printf("Cloudflare 五秒盾自动拉黑 IP 序列化失败: %v", err)
+			return
+		}
+		if _, err := db.Exec("UPDATE go_cf_shield_logs SET blocked_ips = ? WHERE id = ?", string(blockedRulesJSON), logID); err != nil {
+			log.Printf("Cloudflare 五秒盾自动拉黑 IP 写入失败: %v", err)
 		}
 	}
 }
@@ -425,14 +445,14 @@ func updateCloudflareSecurityLevel(apiToken, authEmail, zoneID, level string) er
 	return nil
 }
 
-func blockCloudflareIP(apiToken, authEmail, zoneID, ip, note string) error {
+func blockCloudflareIP(apiToken, authEmail, zoneID, ip, note string) (string, error) {
 	ip = strings.TrimSpace(ip)
 	zoneID = strings.TrimSpace(zoneID)
 	if ip == "" {
-		return nil
+		return "", nil
 	}
 	if zoneID == "" {
-		return fmt.Errorf("Cloudflare Zone ID 为空")
+		return "", fmt.Errorf("Cloudflare Zone ID 为空")
 	}
 
 	payload, _ := json.Marshal(map[string]interface{}{
@@ -447,7 +467,7 @@ func blockCloudflareIP(apiToken, authEmail, zoneID, ip, note string) error {
 	endpoint := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/firewall/access_rules/rules", zoneID)
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(payload))
 	if err != nil {
-		return fmt.Errorf("构建 Cloudflare 拉黑请求失败: %w", err)
+		return "", fmt.Errorf("构建 Cloudflare 拉黑请求失败: %w", err)
 	}
 	if authEmail != "" {
 		req.Header.Set("X-Auth-Email", authEmail)
@@ -460,31 +480,38 @@ func blockCloudflareIP(apiToken, authEmail, zoneID, ip, note string) error {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Cloudflare 拉黑请求失败: %w", err)
+		return "", fmt.Errorf("Cloudflare 拉黑请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Cloudflare 拉黑返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("Cloudflare 拉黑返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var apiResp struct {
 		Success bool `json:"success"`
-		Errors  []struct {
+		Result  struct {
+			ID string `json:"id"`
+		} `json:"result"`
+		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if !apiResp.Success {
 			if len(apiResp.Errors) > 0 && apiResp.Errors[0].Message != "" {
-				return fmt.Errorf("Cloudflare 拉黑返回错误: %s", apiResp.Errors[0].Message)
+				return "", fmt.Errorf("Cloudflare 拉黑返回错误: %s", apiResp.Errors[0].Message)
 			}
-			return fmt.Errorf("Cloudflare 拉黑返回失败: %s", strings.TrimSpace(string(body)))
+			return "", fmt.Errorf("Cloudflare 拉黑返回失败: %s", strings.TrimSpace(string(body)))
 		}
+		if strings.TrimSpace(apiResp.Result.ID) == "" {
+			return "", fmt.Errorf("Cloudflare 拉黑返回规则 ID 为空")
+		}
+		return apiResp.Result.ID, nil
 	}
 
-	return nil
+	return "", fmt.Errorf("Cloudflare 拉黑返回解析失败")
 }
 
 func (l *commentAttemptLimiter) addAndCount(ip string, now int64) (int, int) {
@@ -1787,6 +1814,7 @@ func initDB(db *sql.DB) {
 			"ip" VARCHAR(64),
 			"path" VARCHAR(255),
 			"ua" VARCHAR(511),
+			"blocked_ips" TEXT,
 			"created" INTEGER
 		)`,
 		`CREATE INDEX IF NOT EXISTS "idx_stats_created" ON "go_stats_logs" ("created")`,
@@ -1799,6 +1827,10 @@ func initDB(db *sql.DB) {
 		if err != nil {
 			log.Printf("Error creating table: %v", err)
 		}
+	}
+	_, err := db.Exec(`ALTER TABLE go_cf_shield_logs ADD COLUMN blocked_ips TEXT`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		log.Printf("Error updating Cloudflare shield logs table: %v", err)
 	}
 
 	// Bootstrap a default category if none exists
