@@ -26,6 +26,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
 	_ "modernc.org/sqlite"
 )
 
@@ -36,7 +39,76 @@ var (
 	skinThemeNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	skinColorPattern     = regexp.MustCompile(`(?i)^(#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([0-9.,%\s/+-]+\)|hsla?\([0-9.,%\s/+-]+\)|transparent|inherit|initial|unset|currentColor|[a-z]+)$`)
 	skinLengthPattern    = regexp.MustCompile(`(?i)^(0|[0-9]+(?:\.[0-9]+)?)(px|rem|em|vw|vh|%)?$`)
+	adminAttachmentRe    = regexp.MustCompile(`(src|href)="https?://[^/]+(/[^"]+)"`)
 )
+
+func adminFixAttachmentLinks(htmlContent string) string {
+	return adminAttachmentRe.ReplaceAllStringFunc(htmlContent, func(match string) string {
+		sub := adminAttachmentRe.FindStringSubmatch(match)
+		if len(sub) < 3 {
+			return match
+		}
+		attr := sub[1]
+		path := sub[2]
+
+		purePath := path
+		if idx := strings.Index(path, "?"); idx != -1 {
+			purePath = path[:idx]
+		}
+
+		lowerPath := strings.ToLower(purePath)
+		isImg := strings.HasSuffix(lowerPath, ".jpg") ||
+			strings.HasSuffix(lowerPath, ".jpeg") ||
+			strings.HasSuffix(lowerPath, ".png") ||
+			strings.HasSuffix(lowerPath, ".gif") ||
+			strings.HasSuffix(lowerPath, ".webp") ||
+			strings.HasSuffix(lowerPath, ".svg")
+
+		if strings.HasPrefix(path, "/usr/") || isImg {
+			return fmt.Sprintf("%s=\"%s\"", attr, path)
+		}
+
+		return match
+	})
+}
+
+func adminPreviewTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "无标题"
+	}
+	return fmt.Sprintf(`<h1 class="admin-preview-title">%s</h1>`, template.HTMLEscapeString(title))
+}
+
+func adminRenderPostPreview(mdRenderer goldmark.Markdown, title, text string) (string, error) {
+	content := strings.TrimPrefix(text, "<!--markdown-->")
+	parts := strings.Split(content, "<!--more-->")
+	excerpt := strings.TrimSpace(parts[0])
+	if excerpt == "" {
+		return adminPreviewTitle(title) + `<p>暂无文章内容</p>`, nil
+	}
+
+	var buf bytes.Buffer
+	if err := mdRenderer.Convert([]byte(excerpt), &buf); err != nil {
+		return "", err
+	}
+
+	return adminPreviewTitle(title) + adminFixAttachmentLinks(buf.String()), nil
+}
+
+func adminRenderPostContent(mdRenderer goldmark.Markdown, title, text string) (string, error) {
+	content := strings.TrimSpace(strings.TrimPrefix(text, "<!--markdown-->"))
+	if content == "" {
+		return adminPreviewTitle(title) + `<p>暂无文章内容</p>`, nil
+	}
+
+	var buf bytes.Buffer
+	if err := mdRenderer.Convert([]byte(content), &buf); err != nil {
+		return "", err
+	}
+
+	return adminPreviewTitle(title) + adminFixAttachmentLinks(buf.String()), nil
+}
 
 type cloudflareAccessLogItem struct {
 	Datetime string `json:"datetime"`
@@ -245,6 +317,13 @@ func main() {
 
 	r := gin.Default()
 	r.SetTrustedProxies(nil)
+	mdRenderer := goldmark.New(
+		goldmark.WithExtensions(extension.Linkify),
+		goldmark.WithRendererOptions(
+			html.WithHardWraps(),
+			html.WithUnsafe(),
+		),
+	)
 	r.SetFuncMap(template.FuncMap{
 		"now": func() time.Time { return time.Now() },
 		"substring": func(s string, l int) string {
@@ -1395,6 +1474,45 @@ func main() {
 			"PrevPage":    page - 1,
 			"NextPage":    page + 1,
 		})
+	})
+
+	admin.GET("/post/preview/:cid", func(c *gin.Context) {
+		cid, err := strconv.Atoi(c.Param("cid"))
+		if err != nil || cid <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "文章不存在"})
+			return
+		}
+
+		group, _ := c.Get("userGroup")
+		query := "SELECT title, text FROM typecho_contents WHERE cid=? AND type='post'"
+		args := []interface{}{cid}
+		if group == "visitor" {
+			query += " AND status='publish'"
+		}
+
+		var title, text string
+		if err := db.QueryRow(query, args...).Scan(&title, &text); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "文章不存在"})
+			return
+		}
+
+		preview, err := adminRenderPostPreview(mdRenderer, title, text)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "预览生成失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "html": preview})
+	})
+
+	admin.POST("/post/preview", func(c *gin.Context) {
+		preview, err := adminRenderPostContent(mdRenderer, c.PostForm("title"), c.PostForm("text"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "预览生成失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "html": preview})
 	})
 
 	// Comment Management with Pagination

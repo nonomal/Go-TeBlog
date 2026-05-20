@@ -397,6 +397,100 @@
             border-color: #fecdd3;
             color: #9f1239;
         }
+
+        .post-preview-mask {
+            position: fixed;
+            inset: 0;
+            display: none;
+            background: rgba(15, 23, 42, 0.34);
+            z-index: 190;
+        }
+
+        .post-preview-layer {
+            position: fixed;
+            display: none;
+            left: 50%;
+            top: 52%;
+            transform: translate(-50%, -50%);
+            width: min(840px, calc(100vw - 48px));
+            max-height: min(720px, calc(100vh - 72px));
+            overflow: hidden;
+            border-radius: 8px;
+            background: #ffffff;
+            border: 1px solid #dbe4ea;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+            color: #334155;
+            font-size: 14px;
+            line-height: 1.8;
+            z-index: 200;
+            box-sizing: border-box;
+            white-space: normal;
+        }
+
+        .post-preview-header {
+            height: 48px;
+            padding: 0 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #334155;
+            font-weight: 600;
+            box-sizing: border-box;
+        }
+
+        .post-preview-close {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #dbe4ea;
+            border-radius: 7px;
+            background: #f8fafc;
+            color: #64748b;
+            cursor: pointer;
+        }
+
+        .post-preview-body {
+            max-height: calc(min(720px, calc(100vh - 72px)) - 48px);
+            overflow: auto;
+            padding: 18px 20px;
+            box-sizing: border-box;
+        }
+
+        .post-preview-layer p {
+            margin: 0 0 8px;
+        }
+
+        .post-preview-layer p:last-child {
+            margin-bottom: 0;
+        }
+
+        .post-preview-layer img,
+        .post-preview-layer video {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+        }
+
+        .post-preview-layer pre {
+            overflow: auto;
+            padding: 12px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            white-space: pre-wrap;
+        }
+
+        .post-preview-layer a {
+            color: #0984e3;
+        }
+
+        .post-preview-layer .admin-preview-title {
+            margin: 0 0 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #0f172a;
+            font-size: 20px;
+            line-height: 1.35;
+        }
     </style>
 </head>
 
@@ -434,6 +528,9 @@
                     </td>
                     <td>
                         <div class="action-group">
+                            <button type="button" class="icon-action-btn post-preview-btn" data-cid="{{.Cid}}" title="预览" aria-label="预览">
+                                <i class="fas fa-eye"></i>
+                            </button>
                             <a href="{{adminPath}}/edit/{{.Cid}}" class="icon-action-btn" title="编辑" aria-label="编辑">
                                 <i class="fas fa-pen"></i>
                             </a>
@@ -488,7 +585,75 @@
         </script>
         {{end}}
     </div>
+    <div id="postPreviewMask" class="post-preview-mask"></div>
+    <div id="postPreviewLayer" class="post-preview-layer">
+        <div class="post-preview-header">
+            <span>文章预览</span>
+            <button type="button" class="post-preview-close" id="postPreviewCloseBtn" title="关闭" aria-label="关闭">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div id="postPreviewBody" class="post-preview-body"></div>
+    </div>
     <script>
+        const postPreviewMask = document.getElementById('postPreviewMask');
+        const postPreviewLayer = document.getElementById('postPreviewLayer');
+        const postPreviewBody = document.getElementById('postPreviewBody');
+        const postPreviewCloseBtn = document.getElementById('postPreviewCloseBtn');
+        const postPreviewCache = new Map();
+        let activePreviewCid = null;
+
+        function closePostPreviewLayer() {
+            activePreviewCid = null;
+            postPreviewLayer.style.display = 'none';
+            postPreviewMask.style.display = 'none';
+        }
+
+        function openPostPreviewLayer(cid) {
+            activePreviewCid = cid;
+            postPreviewMask.style.display = 'block';
+            postPreviewLayer.style.display = 'block';
+            postPreviewBody.innerHTML = '<p>预览加载中...</p>';
+
+            if (postPreviewCache.has(cid)) {
+                postPreviewBody.innerHTML = postPreviewCache.get(cid);
+                return;
+            }
+
+            fetch('{{adminPath}}/post/preview/' + cid)
+                .then(response => response.json())
+                .then(data => {
+                    const html = data.success ? data.html : '<p>' + (data.message || '预览加载失败') + '</p>';
+                    postPreviewCache.set(cid, html);
+                    if (activePreviewCid === cid && postPreviewLayer.style.display === 'block') {
+                        postPreviewBody.innerHTML = html;
+                    }
+                })
+                .catch(() => {
+                    const html = '<p>预览加载失败</p>';
+                    postPreviewCache.set(cid, html);
+                    if (activePreviewCid === cid && postPreviewLayer.style.display === 'block') {
+                        postPreviewBody.innerHTML = html;
+                    }
+                });
+        }
+
+        document.querySelectorAll('.post-preview-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const cid = button.dataset.cid;
+                activePreviewCid = cid;
+                openPostPreviewLayer(cid);
+            });
+        });
+
+        postPreviewMask.addEventListener('click', closePostPreviewLayer);
+        postPreviewCloseBtn.addEventListener('click', closePostPreviewLayer);
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && postPreviewLayer.style.display === 'block') {
+                closePostPreviewLayer();
+            }
+        });
+
         function toggleTop(cid, icon) {
             fetch('{{adminPath}}/post/toggle-top/' + cid, {
                 method: 'POST'
