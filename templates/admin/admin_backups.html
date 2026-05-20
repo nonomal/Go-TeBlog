@@ -328,6 +328,12 @@
             border-color: #fecaca;
         }
 
+        .alert.is-dismissing {
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
         .action-group {
             display: inline-flex;
             align-items: center;
@@ -388,6 +394,59 @@
         .inline-form {
             display: inline;
         }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 100;
+        }
+
+        .modal-backdrop.is-open {
+            display: flex;
+        }
+
+        .confirm-dialog {
+            width: min(420px, 100%);
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+
+        .confirm-dialog-header {
+            padding: 20px 22px 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #1e293b;
+            font-weight: 700;
+        }
+
+        .confirm-dialog-header i {
+            color: #10b981;
+        }
+
+        .confirm-dialog-body {
+            padding: 0 22px 20px;
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .confirm-dialog-actions {
+            padding: 16px 22px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
     </style>
 </head>
 
@@ -401,8 +460,7 @@
                 <h2><i class="fas fa-database" style="color: #0984e3;"></i> 数据备份</h2>
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 14px;">
                     <div style="display: flex; gap: 10px;">
-                        <form action="{{adminPath}}/backups/vacuum" method="POST" class="inline-form"
-                            onsubmit="return confirm('压缩数据库将重新整理文件并释放空间，可能需要几秒钟，确定继续吗？')">
+                        <form action="{{adminPath}}/backups/vacuum" method="POST" class="inline-form" id="vacuumDatabaseForm">
                             <button type="submit" id="vacuumDatabaseBtn" class="btn btn-outline" {{if .IsBackingUp}}disabled
                                 style="opacity: 0.6; cursor: not-allowed;" {{end}}>
                                 <i class="fas fa-compress-alt"></i> 压缩数据库 (VACUUM)
@@ -421,15 +479,15 @@
                 </div>
             </header>
 
-            <div id="backupRuntimePanel">
+            <div id="backupRuntimePanel" data-is-backing-up="{{.IsBackingUp}}">
                 {{if .IsBackingUp}}
                 <div class="alert" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">
-                    <i class="fas fa-spinner fa-spin"></i> 备份任务正在后台运行中，请稍后刷新查看结果...
+                    <i class="fas fa-spinner fa-spin"></i> 备份任务正在后台运行中，页面将自动刷新状态...
                 </div>
                 {{end}}
 
                 {{if and .SuccessMessage (not .IsBackingUp)}}
-                <div class="alert alert-success">
+                <div class="alert alert-success" data-auto-dismiss="true">
                     <i class="fas fa-check-circle"></i> {{.SuccessMessage}}
                 </div>
                 {{end}}
@@ -498,16 +556,90 @@
             </div>
         </div>
     </div>
+    <div class="modal-backdrop" id="vacuumConfirmModal" aria-hidden="true">
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="vacuumConfirmTitle">
+            <div class="confirm-dialog-header">
+                <i class="fas fa-compress-alt"></i>
+                <span id="vacuumConfirmTitle">压缩数据库</span>
+            </div>
+            <div class="confirm-dialog-body">
+                压缩数据库将重新整理文件并释放空间，过程可能需要几秒钟。
+            </div>
+            <div class="confirm-dialog-actions">
+                <button type="button" class="btn btn-outline" id="cancelVacuumBtn">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmVacuumBtn">
+                    <i class="fas fa-check"></i> 确认压缩
+                </button>
+            </div>
+        </div>
+    </div>
     <script>
         (() => {
             const refreshBtn = document.getElementById('refreshBackupPanelBtn');
             if (!refreshBtn) return;
+            const vacuumForm = document.getElementById('vacuumDatabaseForm');
+            const vacuumModal = document.getElementById('vacuumConfirmModal');
+            const cancelVacuumBtn = document.getElementById('cancelVacuumBtn');
+            const confirmVacuumBtn = document.getElementById('confirmVacuumBtn');
+
+            const closeVacuumModal = () => {
+                if (!vacuumModal) return;
+                vacuumModal.classList.remove('is-open');
+                vacuumModal.setAttribute('aria-hidden', 'true');
+            };
+
+            const openVacuumModal = () => {
+                if (!vacuumModal) return;
+                vacuumModal.classList.add('is-open');
+                vacuumModal.setAttribute('aria-hidden', 'false');
+                if (confirmVacuumBtn) confirmVacuumBtn.focus();
+            };
+
+            if (vacuumForm) {
+                vacuumForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    openVacuumModal();
+                });
+            }
+
+            if (cancelVacuumBtn) {
+                cancelVacuumBtn.addEventListener('click', closeVacuumModal);
+            }
+
+            if (confirmVacuumBtn && vacuumForm) {
+                confirmVacuumBtn.addEventListener('click', () => {
+                    confirmVacuumBtn.disabled = true;
+                    vacuumForm.submit();
+                });
+            }
+
+            if (vacuumModal) {
+                vacuumModal.addEventListener('click', (e) => {
+                    if (e.target === vacuumModal) closeVacuumModal();
+                });
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeVacuumModal();
+            });
+
+            const bindAutoDismissAlerts = () => {
+                document.querySelectorAll('[data-auto-dismiss="true"]').forEach((alertEl) => {
+                    if (alertEl.dataset.dismissBound === 'true') return;
+                    alertEl.dataset.dismissBound = 'true';
+                    setTimeout(() => {
+                        alertEl.classList.add('is-dismissing');
+                        setTimeout(() => alertEl.remove(), 220);
+                    }, 3000);
+                });
+            };
 
             const syncActionButtons = (doc) => {
                 const nextPanel = doc.getElementById('backupRuntimePanel');
                 const currentPanel = document.getElementById('backupRuntimePanel');
                 if (nextPanel && currentPanel) {
                     currentPanel.replaceWith(nextPanel);
+                    bindAutoDismissAlerts();
                 }
 
                 const nextCreateBtn = doc.getElementById('createBackupBtn');
@@ -525,8 +657,15 @@
                 }
             };
 
+            const isBackingUp = () => {
+                const panel = document.getElementById('backupRuntimePanel');
+                return panel && panel.dataset.isBackingUp === 'true';
+            };
+
             let isRefreshing = false;
-            refreshBtn.addEventListener('click', async () => {
+            let autoRefreshTimer = null;
+
+            const refreshBackupPanel = async (showError) => {
                 if (isRefreshing) return;
                 isRefreshing = true;
                 refreshBtn.disabled = true;
@@ -547,13 +686,28 @@
                     const doc = new DOMParser().parseFromString(html, 'text/html');
                     syncActionButtons(doc);
                 } catch (e) {
-                    alert('刷新失败，请稍后重试。');
+                    if (showError) {
+                        alert('刷新失败，请稍后重试。');
+                    }
                 } finally {
                     if (icon) icon.classList.remove('fa-spin');
                     refreshBtn.disabled = false;
                     isRefreshing = false;
+
+                    if (!isBackingUp() && autoRefreshTimer) {
+                        clearInterval(autoRefreshTimer);
+                        autoRefreshTimer = null;
+                    }
                 }
-            });
+            };
+
+            bindAutoDismissAlerts();
+
+            refreshBtn.addEventListener('click', () => refreshBackupPanel(true));
+
+            if (isBackingUp()) {
+                autoRefreshTimer = setInterval(() => refreshBackupPanel(false), 3000);
+            }
         })();
     </script>
 <script>
