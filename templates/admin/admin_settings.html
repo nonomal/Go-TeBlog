@@ -873,13 +873,16 @@
                             </div>
                             <div class="form-group full-width">
                                 <label>AI 连通性检测</label>
-                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用下面下拉框里的测试语检查评论过滤 AI 是否可调用。{{end}}</span>
+                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，可选择测试语或输入自定义评论检查评论过滤 AI 是否可调用。{{end}}</span>
                                 <select id="aiTestContent" class="full-width"
                                     style="margin-top: 8px; font-family: inherit;">
-                                    <option value="" selected disabled>请先选择测试语。第一条是垃圾评论，第二条是正常评论</option>
+                                    <option value="" selected>请选择测试语，或在下方输入自定义评论</option>
                                     <option value="Spring is a good time to simplify your setup (25% off this month">Spring is a good time to simplify your setup (25% off this month</option>
                                     <option value="Hello, nice to meet you">Hello, nice to meet you</option>
                                 </select>
+                                <textarea id="aiCustomTestContent" class="full-width" rows="2"
+                                    placeholder="输入自定义测试评论"
+                                    style="margin-top: 8px; font-family: inherit;"></textarea>
                                 <button type="button" class="btn-secondary" id="aiTestBtn" style="margin-top: 12px;" {{if eq .UserGroup "visitor"}}disabled{{end}}>
                                     <i class="fas fa-vial" style="margin-right: 8px;"></i>检测
                                 </button>
@@ -966,15 +969,25 @@
             const statusEl = document.getElementById('aiTestStatus');
             const messageEl = document.getElementById('aiTestMessage');
             const contentEl = document.getElementById('aiTestContent');
+            const customContentEl = document.getElementById('aiCustomTestContent');
             const thresholdInput = document.querySelector('input[name="aiThreshold"]');
             const isVisitor = {{if eq .UserGroup "visitor"}}true{{else}}false{{end}};
 
+            function readTestContent() {
+                const customContent = customContentEl ? customContentEl.value.trim() : '';
+                if (customContent) {
+                    return customContent;
+                }
+
+                return contentEl ? contentEl.value.trim() : '';
+            }
+
             function updateButtonState() {
-                if (!btn || !contentEl) {
+                if (!btn) {
                     return;
                 }
 
-                btn.disabled = isVisitor || !contentEl.value.trim();
+                btn.disabled = isVisitor || !readTestContent();
             }
 
             function showResult(ok, message) {
@@ -1024,12 +1037,15 @@
                     contentEl.addEventListener('change', updateButtonState);
                     contentEl.addEventListener('input', updateButtonState);
                 }
+                if (customContentEl) {
+                    customContentEl.addEventListener('input', updateButtonState);
+                }
 
                 btn.addEventListener('click', async function () {
                     const apiUrl = document.querySelector('input[name="aiApiUrl"]').value.trim();
                     const model = document.querySelector('input[name="aiModel"]').value.trim();
                     const apiKey = document.querySelector('input[name="grokApiKey"]').value.trim();
-                    const testContent = contentEl ? contentEl.value.trim() : '';
+                    const testContent = readTestContent();
                     const formData = new URLSearchParams();
 
                     formData.append('aiApiUrl', apiUrl);

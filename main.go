@@ -1402,6 +1402,11 @@ func main() {
 			threshold := getOptionInt(db, "aiThreshold", 5)
 			failClosed := getOption(db, "commentFailClosed", "0") == "1"
 			score, err := checkSpamAI(words, apiKey, apiUrl, model)
+			if err != nil {
+				log.Printf("Comment AI detection failed: cid=%d ip=%s failClosed=%t error=%v", cid, ip, failClosed, err)
+			} else {
+				log.Printf("Comment AI detection score: cid=%d ip=%s score=%d threshold=%d rejected=%t", cid, ip, score, threshold, score > threshold)
+			}
 			if err != nil && failClosed {
 				site := getSiteInfo(db)
 				c.HTML(http.StatusServiceUnavailable, "error.html", gin.H{
