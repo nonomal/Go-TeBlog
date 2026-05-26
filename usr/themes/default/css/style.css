@@ -407,21 +407,26 @@ textarea {
 
 .more {
     text-align: center;
-    margin: 20px 0;
+    margin: 10px 0 16px;
 }
 
 .more a {
-    background: var(--primary-color);
-    color: white;
-    padding: 12px 24px;
-    border-radius: var(--radius);
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    color: #54769d;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.86em;
     font-weight: 500;
-    transition: all 0.2s ease;
-    border: none;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    border: 1px solid #adc1d8;
 }
 
 .more a:hover {
-    background: var(--primary-hover);
+    background: rgba(59, 130, 246, 0.08);
+    border-color: #879fbd;
+    color: #315f91;
     transform: translateY(-1px);
 }
 

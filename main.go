@@ -1147,7 +1147,7 @@ func main() {
 
 			// If <!--more--> was found, append the "Read more" link
 			if len(parts) > 1 {
-				moreLink := fmt.Sprintf("<p class=\"more\"><a href=\"/blog/index.php/archives/%d/\" title=\"%s\">- 阅读剩余部分 -</a></p>", p.Cid, p.Title)
+				moreLink := fmt.Sprintf("<p class=\"more\"><a href=\"/blog/index.php/archives/%d/\" title=\"%s\">未完，继续</a></p>", p.Cid, p.Title)
 				htmlContent += moreLink
 			}
 
