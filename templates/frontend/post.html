@@ -82,6 +82,26 @@
         .comment-reply-label i {
             font-size: 12px;
         }
+
+        #comment-submit {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        #comment-submit:disabled {
+            cursor: wait;
+            opacity: 0.82;
+        }
+
+        #comment-submit .comment-submit-spinner {
+            display: none;
+        }
+
+        #comment-submit.is-loading .comment-submit-spinner {
+            display: inline-block;
+        }
     </style>
 </head>
 
@@ -183,7 +203,11 @@
                                         required></textarea>
                                 </p>
                                 <p>
-                                    <button type="submit" class="submit">提交评论</button>
+                                    <button type="submit" class="submit" id="comment-submit">
+                                        <i class="fas fa-spinner fa-spin comment-submit-spinner"
+                                            aria-hidden="true"></i>
+                                        <span class="comment-submit-text">提交评论</span>
+                                    </button>
                                 </p>
                             </form>
                         </div>
@@ -244,6 +268,36 @@
 
     <script src="{{.Site.ThemeBase}}/js/mobile-nav.js"></script>
     <script src="{{.Site.ThemeBase}}/js/theme-mode.js"></script>
+    <script>
+        (function () {
+            var form = document.getElementById('comment-form');
+            var button = document.getElementById('comment-submit');
+            if (!form || !button) {
+                return;
+            }
+            var text = button.querySelector('.comment-submit-text');
+
+            function resetCommentSubmit() {
+                button.disabled = false;
+                button.classList.remove('is-loading');
+                button.setAttribute('aria-busy', 'false');
+                if (text) {
+                    text.textContent = '提交评论';
+                }
+            }
+
+            form.addEventListener('submit', function () {
+                button.disabled = true;
+                button.classList.add('is-loading');
+                button.setAttribute('aria-busy', 'true');
+                if (text) {
+                    text.textContent = '提交中...';
+                }
+            });
+
+            window.addEventListener('pageshow', resetCommentSubmit);
+        })();
+    </script>
     {{.Site.FooterCode}}
 </body>
 
