@@ -2620,6 +2620,14 @@ func stripThinkingOutput(content string) string {
 	return strings.TrimSpace(cleaned)
 }
 
+func compactAIText(content string) string {
+	cleaned := stripThinkingOutput(content)
+	if idx := strings.IndexAny(cleaned, "\r\n"); idx >= 0 {
+		cleaned = cleaned[:idx]
+	}
+	return strings.TrimSpace(cleaned)
+}
+
 func extractSpamScore(content string) (int, bool) {
 	cleaned := stripThinkingOutput(content)
 	scoreRE := regexp.MustCompile(`\b([0-9])\b`)
@@ -2652,13 +2660,19 @@ func checkSpamAI(words string, apiKey string, apiUrl string, model string, timeo
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": words},
 		},
-		"max_tokens":  1,
-		"temperature": 0.1,
+		"max_tokens":  512,
+		"temperature": 0,
 	}
 
-	jsonData, _ := json.Marshal(requestData)
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return 0, fmt.Errorf("ai moderation request marshal failed: %w", err)
+	}
 	client := &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
-	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return 0, fmt.Errorf("ai moderation request create failed: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
@@ -2668,23 +2682,50 @@ func checkSpamAI(words string, apiKey string, apiUrl string, model string, timeo
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		var result struct {
-			Choices []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			} `json:"choices"`
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != http.StatusOK {
+		detail := strings.TrimSpace(string(body))
+		if detail != "" {
+			return 0, fmt.Errorf("ai moderation status: %d: %s", resp.StatusCode, detail)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && len(result.Choices) > 0 {
-			content := strings.TrimSpace(result.Choices[0].Message.Content)
-			if score, ok := extractSpamScore(content); ok {
-				return score, nil
-			}
-			return 0, fmt.Errorf("ai moderation response invalid")
-		}
-		return 0, fmt.Errorf("ai moderation decode failed")
+		return 0, fmt.Errorf("ai moderation status: %d", resp.StatusCode)
 	}
 
-	return 0, fmt.Errorf("ai moderation status: %d", resp.StatusCode)
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content any `json:"content"`
+			} `json:"message"`
+			Text string `json:"text"`
+		} `json:"choices"`
+		OutputText string `json:"output_text"`
+		Text       string `json:"text"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, fmt.Errorf("ai moderation decode failed: %w; raw: %s", err, strings.TrimSpace(string(body)))
+	}
+
+	content := ""
+	if len(result.Choices) > 0 {
+		if s, ok := result.Choices[0].Message.Content.(string); ok {
+			content = strings.TrimSpace(s)
+		}
+		if content == "" {
+			content = strings.TrimSpace(result.Choices[0].Text)
+		}
+	}
+	if content == "" {
+		content = strings.TrimSpace(result.OutputText)
+	}
+	if content == "" {
+		content = strings.TrimSpace(result.Text)
+	}
+	content = compactAIText(content)
+	if content == "" {
+		return 0, fmt.Errorf("ai moderation response empty; raw: %s", strings.TrimSpace(string(body)))
+	}
+	if score, ok := extractSpamScore(content); ok {
+		return score, nil
+	}
+	return 0, fmt.Errorf("ai moderation response invalid: %s", content)
 }
