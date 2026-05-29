@@ -1400,8 +1400,12 @@ func main() {
 			apiUrl := getOption(db, "aiApiUrl", "https://api.groq.com/openai/v1/chat/completions")
 			model := getOption(db, "aiModel", "llama-3.3-70b-versatile")
 			threshold := getOptionInt(db, "aiThreshold", 5)
+			timeoutSeconds := getOptionInt(db, "aiTimeoutSeconds", 10)
+			if timeoutSeconds <= 0 {
+				timeoutSeconds = 10
+			}
 			failClosed := getOption(db, "commentFailClosed", "0") == "1"
-			score, err := checkSpamAI(words, apiKey, apiUrl, model)
+			score, err := checkSpamAI(words, apiKey, apiUrl, model, timeoutSeconds)
 			if err != nil {
 				log.Printf("Comment AI detection failed: cid=%d ip=%s failClosed=%t error=%v", cid, ip, failClosed, err)
 			} else {
@@ -2632,9 +2636,12 @@ func extractSpamScore(content string) (int, bool) {
 	return score, true
 }
 
-func checkSpamAI(words string, apiKey string, apiUrl string, model string) (int, error) {
+func checkSpamAI(words string, apiKey string, apiUrl string, model string, timeoutSeconds int) (int, error) {
 	if apiKey == "" || apiUrl == "" || model == "" {
 		return 0, fmt.Errorf("ai moderation config missing")
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 10
 	}
 
 	systemPrompt := "You are an assistant for detecting spam, advertisements, meaningless text, political content, religious content, and malicious content such as SQL injection or XSS. Score user input from 0 to 9, where 0 means safe (e.g., programming or server-related), 5 means suspicious, and 9 means confirmed spam, ads, political or religious content, attacks, or nonsense like \"asdf\", \"12345\", \"aaaa\". If the input is not in English or Chinese, score it as 9. Only return a single integer (0–9) with no explanation."
@@ -2650,7 +2657,7 @@ func checkSpamAI(words string, apiKey string, apiUrl string, model string) (int,
 	}
 
 	jsonData, _ := json.Marshal(requestData)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
 	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)

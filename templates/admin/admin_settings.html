@@ -871,6 +871,11 @@
                                 <label>AI API Key</label>
                                 <input type="text" name="grokApiKey" value="{{.GrokApiKey}}" placeholder="sk-...">
                             </div>
+                            <div class="form-group">
+                                <label>AI 检测超时 (秒)</label>
+                                <input type="number" name="aiTimeoutSeconds" value="{{.AiTimeoutSeconds}}" min="1"
+                                    required>
+                            </div>
                             <div class="form-group full-width">
                                 <label>AI 连通性检测</label>
                                 <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，可选择测试语或输入自定义评论检查评论过滤 AI 是否可调用。{{end}}</span>
@@ -1045,12 +1050,14 @@
                     const apiUrl = document.querySelector('input[name="aiApiUrl"]').value.trim();
                     const model = document.querySelector('input[name="aiModel"]').value.trim();
                     const apiKey = document.querySelector('input[name="grokApiKey"]').value.trim();
+                    const timeoutSeconds = document.querySelector('input[name="aiTimeoutSeconds"]').value.trim();
                     const testContent = readTestContent();
                     const formData = new URLSearchParams();
 
                     formData.append('aiApiUrl', apiUrl);
                     formData.append('aiModel', model);
                     formData.append('grokApiKey', apiKey);
+                    formData.append('aiTimeoutSeconds', timeoutSeconds);
                     formData.append('aiTestContent', testContent);
 
                     btn.disabled = true;

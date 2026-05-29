@@ -966,6 +966,7 @@ func main() {
 			"GrokApiKey":                 apiKey,
 			"AiApiUrl":                   getOption(db, "aiApiUrl", "https://api.groq.com/openai/v1/chat/completions"),
 			"AiModel":                    getOption(db, "aiModel", "llama-3.3-70b-versatile"),
+			"AiTimeoutSeconds":           getOption(db, "aiTimeoutSeconds", "10"),
 			"CommentAiDetection":         getOption(db, "commentAiDetection", "1"),
 			"DefaultCategory":            getOption(db, "defaultCategory", "1"),
 			"CommentAudit":               getOption(db, "commentAudit", "0"),
@@ -1086,6 +1087,7 @@ func main() {
 		aiApiUrl := c.PostForm("aiApiUrl")
 		aiModel := c.PostForm("aiModel")
 		aiThreshold := c.PostForm("aiThreshold")
+		aiTimeoutSeconds := normalizeAITimeoutSeconds(c.PostForm("aiTimeoutSeconds"))
 		commentAiDetection := c.DefaultPostForm("commentAiDetection", "0")
 		sessionTimeout := c.PostForm("sessionTimeout")
 		keywords := c.PostForm("keywords")
@@ -1145,6 +1147,7 @@ func main() {
 		setOption(db, "aiApiUrl", aiApiUrl)
 		setOption(db, "aiModel", aiModel)
 		setOption(db, "aiThreshold", aiThreshold)
+		setOption(db, "aiTimeoutSeconds", strconv.Itoa(aiTimeoutSeconds))
 		setOption(db, "commentAiDetection", commentAiDetection)
 		setOption(db, "sessionTimeout", sessionTimeout)
 		setOption(db, "keywords", keywords)
@@ -1330,6 +1333,7 @@ func main() {
 		apiKey := strings.TrimSpace(c.PostForm("grokApiKey"))
 		apiURL := strings.TrimSpace(c.PostForm("aiApiUrl"))
 		model := strings.TrimSpace(c.PostForm("aiModel"))
+		timeoutSeconds := normalizeAITimeoutSeconds(c.PostForm("aiTimeoutSeconds"))
 		testContent := strings.TrimSpace(c.PostForm("aiTestContent"))
 		if apiKey == "" || apiURL == "" || model == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -1342,7 +1346,7 @@ func main() {
 			testContent = "这是一条正常的测试评论，用于检测评论过滤 AI 接口是否可正常调用。"
 		}
 
-		score, err := checkSpamAITestComment(testContent, apiKey, apiURL, model)
+		score, err := checkSpamAITestComment(testContent, apiKey, apiURL, model, timeoutSeconds)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"ok":      false,
@@ -2849,8 +2853,15 @@ func extractSpamScore(content string) (int, bool) {
 }
 
 func callAIChatCompletionText(apiKey, apiURL string, requestData map[string]interface{}) (string, error) {
+	return callAIChatCompletionTextWithTimeout(apiKey, apiURL, requestData, 10)
+}
+
+func callAIChatCompletionTextWithTimeout(apiKey, apiURL string, requestData map[string]interface{}, timeoutSeconds int) (string, error) {
 	if apiKey == "" || apiURL == "" {
 		return "", fmt.Errorf("AI 配置缺失：请填写 AI API URL 和 AI API Key")
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 10
 	}
 
 	jsonData, err := json.Marshal(requestData)
@@ -2858,7 +2869,7 @@ func callAIChatCompletionText(apiKey, apiURL string, requestData map[string]inte
 		return "", fmt.Errorf("AI 请求组装失败: %w", err)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
 	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("AI 请求创建失败: %w", err)
@@ -2917,9 +2928,12 @@ func callAIChatCompletionText(apiKey, apiURL string, requestData map[string]inte
 	return compactAIText(content), nil
 }
 
-func checkSpamAITestComment(words string, apiKey string, apiURL string, model string) (int, error) {
+func checkSpamAITestComment(words string, apiKey string, apiURL string, model string, timeoutSeconds int) (int, error) {
 	if apiKey == "" || apiURL == "" || model == "" {
 		return 0, fmt.Errorf("AI 检测配置缺失：请填写 AI API URL、AI Model 和 AI API Key")
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 10
 	}
 
 	systemPrompt := "You are an assistant for detecting spam, advertisements, meaningless text, political content, religious content, and malicious content such as SQL injection or XSS. Score user input from 0 to 9, where 0 means safe (e.g., programming or server-related), 5 means suspicious, and 9 means confirmed spam, ads, political or religious content, attacks, or nonsense like \"asdf\", \"12345\", \"aaaa\". If the input is not in English or Chinese, score it as 9. Only return a single integer (0–9) with no explanation."
@@ -2934,7 +2948,7 @@ func checkSpamAITestComment(words string, apiKey string, apiURL string, model st
 		"temperature": 0,
 	}
 
-	content, err := callAIChatCompletionText(apiKey, apiURL, requestData)
+	content, err := callAIChatCompletionTextWithTimeout(apiKey, apiURL, requestData, timeoutSeconds)
 	if err != nil {
 		return 0, fmt.Errorf("AI 检测失败: %w", err)
 	}
@@ -3262,6 +3276,14 @@ func getOptionInt(db *sql.DB, name string, defaultValue int) int {
 		return defaultValue
 	}
 	return i
+}
+
+func normalizeAITimeoutSeconds(value string) int {
+	timeoutSeconds, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || timeoutSeconds <= 0 {
+		return 10
+	}
+	return timeoutSeconds
 }
 
 func setOption(db *sql.DB, name string, value string) {
