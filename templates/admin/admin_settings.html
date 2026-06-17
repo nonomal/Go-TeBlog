@@ -184,6 +184,19 @@
             margin: 0 auto;
         }
 
+        .settings-titlebar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .settings-titlebar h1 {
+            margin: 0;
+            font-size: 1.8em;
+        }
+
         .settings-section {
             background: #fff;
             margin-bottom: 30px;
@@ -191,6 +204,52 @@
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
             overflow: hidden;
             border: 1px solid #e2e8f0;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+            padding: 8px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .settings-tab {
+            border: none;
+            background: transparent;
+            color: #64748b;
+            padding: 9px 13px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .settings-tab:hover {
+            color: #0f172a;
+            background: #f1f5f9;
+        }
+
+        .settings-tab.active {
+            color: #fff;
+            background: #0984e3;
+            box-shadow: 0 4px 10px rgba(9, 132, 227, 0.22);
+        }
+
+        .settings-section[data-settings-panel] {
+            display: none;
+        }
+
+        .settings-section[data-settings-panel].active {
+            display: block;
         }
 
         #skin-settings {
@@ -273,19 +332,6 @@
             outline: none;
             border-color: #38bdf8;
             box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
-        }
-
-        .btn-container {
-            position: sticky;
-            bottom: 20px;
-            background: rgba(241, 245, 249, 0.8);
-            backdrop-filter: blur(8px);
-            padding: 20px;
-            border-radius: 12px;
-            display: flex;
-            justify-content: center;
-            margin-top: 40px;
-            z-index: 4;
         }
 
         .btn-submit {
@@ -486,7 +532,9 @@
 
     <div class="content">
         <div class="settings-container">
-            <h1 style="margin-bottom: 30px; font-size: 1.8em;">{{if eq .ActiveSection "skin"}}皮肤设置{{else}}系统设置{{end}}</h1>
+            <div class="settings-titlebar">
+                <h1>{{if eq .ActiveSection "skin"}}皮肤设置{{else}}系统设置{{end}}</h1>
+            </div>
 
             {{if .SuccessMessage}}
             <div class="alert alert-success">
@@ -498,11 +546,26 @@
             {{if eq .ActiveSection "skin"}}
             <form action="{{adminPath}}/settings/skin" method="POST">
             {{else}}
-            <form action="{{adminPath}}/settings" method="POST">
+            <form action="{{adminPath}}/settings" method="POST" id="settingsForm">
                 <input type="hidden" name="activeSection" value="{{.ActiveSection}}">
                 {{if ne .ActiveSection "skin"}}
+                <div class="settings-tabs" role="tablist" aria-label="系统设置分组">
+                    <button type="button" class="settings-tab active" data-settings-tab="basic" role="tab"
+                        aria-selected="true"><i class="fas fa-info-circle"></i>基础信息</button>
+                    <button type="button" class="settings-tab" data-settings-tab="display" role="tab"
+                        aria-selected="false"><i class="fas fa-desktop"></i>展示阅读</button>
+                    <button type="button" class="settings-tab" data-settings-tab="shield" role="tab"
+                        aria-selected="false"><i class="fas fa-cloud"></i>访问防护</button>
+                    <button type="button" class="settings-tab" data-settings-tab="comments" role="tab"
+                        aria-selected="false"><i class="fas fa-shield-alt"></i>评论过滤</button>
+                    <button type="button" class="settings-tab" data-settings-tab="ai" role="tab"
+                        aria-selected="false"><i class="fas fa-robot"></i>AI 系统</button>
+                    <button type="button" class="settings-tab" data-settings-tab="advanced" role="tab"
+                        aria-selected="false"><i class="fas fa-sliders-h"></i>其它设置</button>
+                </div>
+
                 <!-- 基础设置 -->
-                <div class="settings-section">
+                <div class="settings-section active" data-settings-panel="basic" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-info-circle"></i>
                         <h3>基础信息</h3>
@@ -565,7 +628,7 @@
                 </div>
 
                 <!-- 展示与阅读 -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-panel="display" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-desktop"></i>
                         <h3>展示与阅读</h3>
@@ -723,7 +786,7 @@
 
                 {{if ne .ActiveSection "skin"}}
                 <!-- 访问防护 -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-panel="shield" role="tabpanel">
                     <div class="section-header" style="padding-top: 12px; padding-bottom: 12px;">
                         <i class="fas fa-cloud"></i>
                         <h3>访问防护（Cloudflare 五秒盾）</h3>
@@ -792,7 +855,7 @@
 
 
                 <!-- 评论过滤与限制 -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-panel="comments" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-shield-alt"></i>
                         <h3>评论过滤与频率限制</h3>
@@ -846,12 +909,18 @@
                                 <input type="number" name="aiThreshold" value="{{.AiThreshold}}" min="0" max="9"
                                     required>
                             </div>
+                            <div class="form-group full-width">
+                                <label>AI 评论检测提示语</label>
+                                <span class="label-desc">用于前台评论垃圾检测。留空保存时会恢复默认提示语。</span>
+                                <textarea name="aiCommentPrompt" class="full-width" rows="5"
+                                    style="margin-top: 8px; font-family: inherit;">{{.AiCommentPrompt}}</textarea>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- AI 系统 -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-panel="ai" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-robot"></i>
                         <h3>AI 系统</h3>
@@ -895,12 +964,6 @@
                                     style="margin-top: 8px; font-family: inherit;">{{.AiProofreadPrompt}}</textarea>
                             </div>
                             <div class="form-group full-width">
-                                <label>AI 评论检测提示语</label>
-                                <span class="label-desc">用于前台评论垃圾检测。留空保存时会恢复默认提示语。</span>
-                                <textarea name="aiCommentPrompt" class="full-width" rows="5"
-                                    style="margin-top: 8px; font-family: inherit;">{{.AiCommentPrompt}}</textarea>
-                            </div>
-                            <div class="form-group full-width">
                                 <label>AI 连通性检测</label>
                                 <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，可选择测试语或输入自定义评论检查评论过滤 AI 是否可调用。{{end}}</span>
                                 <select id="aiTestContent" class="full-width"
@@ -921,7 +984,7 @@
                 </div>
 
                 <!-- 其它设置 -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-panel="advanced" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-sliders-h"></i>
                         <h3>其它设置</h3>
@@ -943,13 +1006,8 @@
                     </div>
                 </div>
 
-                <div class="btn-container">
-                    <button type="submit" class="btn-submit">
-                        <i class="fas fa-save" style="margin-right: 8px; font-size: 0.9em; opacity: 0.9;"></i> 保存所有设置
-                    </button>
-                </div>
                 {{else}}
-                <div class="btn-container">
+                <div style="display: flex; justify-content: center; margin-top: 40px;">
                     <button type="submit" class="btn-submit">
                         <i class="fas fa-save" style="margin-right: 8px; font-size: 0.9em; opacity: 0.9;"></i> 保存皮肤设置
                     </button>
@@ -973,6 +1031,131 @@
     </div>
 
     <script>
+        (function () {
+            const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
+            const panels = Array.from(document.querySelectorAll('[data-settings-panel]'));
+            const storageKey = 'go-teblog-settings-tab';
+
+            function activateTab(name) {
+                if (!name || !tabs.some(tab => tab.dataset.settingsTab === name)) {
+                    name = 'basic';
+                }
+
+                tabs.forEach(function (tab) {
+                    const active = tab.dataset.settingsTab === name;
+                    tab.classList.toggle('active', active);
+                    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                });
+
+                panels.forEach(function (panel) {
+                    panel.classList.toggle('active', panel.dataset.settingsPanel === name);
+                });
+
+                try {
+                    window.localStorage.setItem(storageKey, name);
+                } catch (error) {
+                    return;
+                }
+            }
+
+            tabs.forEach(function (tab) {
+                tab.addEventListener('click', function () {
+                    activateTab(tab.dataset.settingsTab);
+                });
+            });
+
+            panels.forEach(function (panel) {
+                panel.addEventListener('invalid', function () {
+                    activateTab(panel.dataset.settingsPanel);
+                }, true);
+            });
+
+            let initialTab = 'basic';
+            try {
+                initialTab = window.localStorage.getItem(storageKey) || initialTab;
+            } catch (error) {
+                initialTab = 'basic';
+            }
+            activateTab(initialTab);
+        })();
+
+        (function () {
+            const form = document.getElementById('settingsForm');
+            if (!form) {
+                return;
+            }
+
+            let saveTimer = null;
+            let saving = false;
+            let queued = false;
+            let savedState = readFormState();
+
+            function readFormState() {
+                return Array.from(form.elements).map(function (field) {
+                    if (!field.name || field.disabled || field.type === 'submit' || field.type === 'button') {
+                        return null;
+                    }
+                    if (field.type === 'checkbox' || field.type === 'radio') {
+                        return field.name + '=' + (field.checked ? '1' : '0');
+                    }
+                    return field.name + '=' + field.value;
+                }).filter(Boolean).join('&');
+            }
+
+            function scheduleSave(event) {
+                const field = event && event.target;
+                if (!field || !field.name || field.disabled) {
+                    return;
+                }
+                window.clearTimeout(saveTimer);
+                saveTimer = window.setTimeout(saveSettings, 1200);
+            }
+
+            async function saveSettings() {
+                const currentState = readFormState();
+                if (currentState === savedState || !form.checkValidity()) {
+                    return;
+                }
+
+                if (saving) {
+                    queued = true;
+                    return;
+                }
+
+                saving = true;
+                queued = false;
+
+                try {
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: new FormData(form)
+                    });
+                    if (response.ok) {
+                        savedState = readFormState();
+                    }
+                } catch (error) {
+                    console.error('settings autosave failed', error);
+                } finally {
+                    saving = false;
+                    if (queued && readFormState() !== savedState) {
+                        window.clearTimeout(saveTimer);
+                        saveTimer = window.setTimeout(saveSettings, 300);
+                    }
+                }
+            }
+
+            form.addEventListener('input', scheduleSave);
+            form.addEventListener('change', scheduleSave);
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                window.clearTimeout(saveTimer);
+                saveSettings();
+            });
+        })();
+
         (function () {
             const input = document.getElementById('adminPathInput');
             const preview = document.getElementById('pathPreview');
