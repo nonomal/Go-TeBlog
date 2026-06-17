@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>修改密码 - Go-TeBlog</title>
+    <title>帐户安全 - Go-TeBlog</title>
     <link rel="stylesheet" href="/blog/usr/themes/default/css/font-awesome.min.css">
     <style>
         body {
@@ -257,19 +257,28 @@
             box-shadow: 0 0 0 4px rgba(9, 132, 227, 0.1);
         }
 
-        .security-section {
+        .security-grid {
             border-top: 1px solid #e2e8f0;
             margin-top: 24px;
             padding-top: 22px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
         }
 
-        .security-section + .security-section {
-            margin-top: 0;
-            border-top: 0;
+        .security-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+            padding: 18px;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            background: #f8fafc;
         }
 
         .security-section h3 {
-            margin: 0 0 12px;
+            margin: 0;
             font-size: 1rem;
             color: #1e293b;
             display: flex;
@@ -280,7 +289,7 @@
         .passkey-list {
             display: grid;
             gap: 8px;
-            margin: 12px 0;
+            margin: 0;
         }
 
         .passkey-item {
@@ -298,12 +307,18 @@
             font-weight: 600;
             color: #334155;
             font-size: 0.9rem;
+            overflow-wrap: anywhere;
         }
 
         .passkey-meta {
             margin-top: 2px;
             color: #94a3b8;
             font-size: 0.75rem;
+            overflow-wrap: anywhere;
+        }
+
+        .passkey-item > div:first-child {
+            min-width: 0;
         }
 
         .passkey-delete {
@@ -505,16 +520,6 @@
         }
 
         @media (min-width: 980px) {
-            .security-section {
-                display: inline-grid;
-                width: calc(50% - 12px);
-                vertical-align: top;
-            }
-
-            .security-section + .security-section {
-                margin-left: 20px;
-            }
-
             .two-factor-qr {
                 justify-content: flex-start;
             }
@@ -540,6 +545,10 @@
                 padding: 24px;
             }
 
+            .security-grid {
+                grid-template-columns: 1fr;
+            }
+
             .two-factor-actions,
             .passkey-actions {
                 grid-template-columns: 1fr;
@@ -561,7 +570,7 @@
         <div class="profile-card">
             <div class="card-body">
                 <h2 style="margin-top: 0; margin-bottom: 24px; font-size: 1.25rem; font-weight: 700; color: #1e293b;">
-                    账户安全</h2>
+                    帐户安全</h2>
                 {{if .ErrorMessage}}
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
@@ -621,77 +630,79 @@
                     </ul>
                 </div>
 
-                <div class="security-section">
-                    <h3><i class="fas fa-mobile-alt"></i> Google 验证器 2FA</h3>
-                    {{if not .TwoFactorAllowed}}
-                    <div class="passkey-notice">guest 或访客用户不能设置 2FA。</div>
-                    {{else if .TwoFactorEnabled}}
-                    <div class="two-factor-box">
-                        <div class="passkey-notice">已启用。密码登录时需要输入 Google 验证器中的 6 位验证码；通行密钥登录不需要 2FA。</div>
-                        <form action="{{adminPath}}/profile/2fa/disable" method="POST" class="two-factor-actions">
-                            <div class="input-wrapper">
-                                <i class="fas fa-key"></i>
-                                <input type="text" name="totp_code" inputmode="numeric" pattern="[0-9]*"
-                                    autocomplete="one-time-code" placeholder="输入 6 位验证码关闭 2FA" required>
-                            </div>
-                            <button type="submit" class="btn-2fa danger">关闭</button>
-                        </form>
-                    </div>
-                    {{else}}
-                    <div class="two-factor-box">
-                        <div class="passkey-notice">使用 Google Authenticator 扫描二维码，然后输入 6 位验证码启用。下方密钥可作为手动添加备用。</div>
-                        {{if .TwoFactorQRCode}}
-                        <div class="two-factor-qr">
-                            <img src="{{.TwoFactorQRCode}}" alt="Google 验证器二维码">
-                        </div>
-                        {{end}}
-                        <div class="two-factor-secret">{{.TwoFactorSecret}}</div>
-                        <form action="{{adminPath}}/profile/2fa/enable" method="POST" class="two-factor-actions">
-                            <div class="input-wrapper">
-                                <i class="fas fa-key"></i>
-                                <input type="text" name="totp_code" inputmode="numeric" pattern="[0-9]*"
-                                    autocomplete="one-time-code" placeholder="输入 6 位验证码启用 2FA" required>
-                            </div>
-                            <button type="submit" class="btn-2fa">启用</button>
-                        </form>
-                    </div>
-                    {{end}}
-                </div>
-
-                <div class="security-section">
-                    <h3><i class="fas fa-fingerprint"></i> 通行密钥</h3>
-                    {{if not .PasskeyAllowed}}
-                    <div class="passkey-notice">guest 或访客用户不能使用通行密钥。</div>
-                    {{else if not .PasskeySiteReady}}
-                    <div class="passkey-notice">请先在系统设置中配置正确的站点地址。站点地址仍为初始值时不能绑定通行密钥。</div>
-                    {{else}}
-                    <div class="passkey-actions">
-                        <div class="input-wrapper">
-                            <i class="fas fa-tag"></i>
-                            <input type="text" id="passkeyName" placeholder="通行密钥名称，例如 MacBook 或 iPhone">
-                        </div>
-                        <button type="button" class="btn-passkey" id="registerPasskeyBtn">
-                            <i class="fas fa-plus"></i> 绑定
-                        </button>
-                    </div>
-                    {{end}}
-
-                    <div class="passkey-list">
-                        {{range .Passkeys}}
-                        <div class="passkey-item">
-                            <div>
-                                <div class="passkey-name">{{if .Name}}{{.Name}}{{else}}通行密钥{{end}}</div>
-                                <div class="passkey-meta">创建时间戳: {{.CreatedAt}}{{if .LastUsedAt}} / 最近使用: {{.LastUsedAt}}{{end}}</div>
-                            </div>
-                            {{if $.PasskeyAllowed}}
-                            <button type="button" class="passkey-delete" data-id="{{.ID}}" title="删除通行密钥" aria-label="删除通行密钥">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                            {{end}}
+                <div class="security-grid">
+                    <div class="security-section">
+                        <h3><i class="fas fa-mobile-alt"></i> Google 验证器 2FA</h3>
+                        {{if not .TwoFactorAllowed}}
+                        <div class="passkey-notice">访客用户不能设置 2FA。</div>
+                        {{else if .TwoFactorEnabled}}
+                        <div class="two-factor-box">
+                            <div class="passkey-notice">已启用。密码登录时需要输入 Google 验证器中的 6 位验证码；通行密钥登录不需要 2FA。</div>
+                            <form action="{{adminPath}}/profile/2fa/disable" method="POST" class="two-factor-actions">
+                                <div class="input-wrapper">
+                                    <i class="fas fa-key"></i>
+                                    <input type="text" name="totp_code" inputmode="numeric" pattern="[0-9]*"
+                                        autocomplete="one-time-code" placeholder="输入 6 位验证码关闭 2FA" required>
+                                </div>
+                                <button type="submit" class="btn-2fa danger">关闭</button>
+                            </form>
                         </div>
                         {{else}}
-                        <div class="passkey-notice">当前账号尚未绑定通行密钥。</div>
+                        <div class="two-factor-box">
+                            <div class="passkey-notice">使用 Google Authenticator 扫描二维码，然后输入 6 位验证码启用。下方密钥可作为手动添加备用。</div>
+                            {{if .TwoFactorQRCode}}
+                            <div class="two-factor-qr">
+                                <img src="{{.TwoFactorQRCode}}" alt="Google 验证器二维码">
+                            </div>
+                            {{end}}
+                            <div class="two-factor-secret">{{.TwoFactorSecret}}</div>
+                            <form action="{{adminPath}}/profile/2fa/enable" method="POST" class="two-factor-actions">
+                                <div class="input-wrapper">
+                                    <i class="fas fa-key"></i>
+                                    <input type="text" name="totp_code" inputmode="numeric" pattern="[0-9]*"
+                                        autocomplete="one-time-code" placeholder="输入 6 位验证码启用 2FA" required>
+                                </div>
+                                <button type="submit" class="btn-2fa">启用</button>
+                            </form>
+                        </div>
                         {{end}}
+                    </div>
+
+                    <div class="security-section">
+                        <h3><i class="fas fa-fingerprint"></i> 通行密钥</h3>
+                        {{if not .PasskeyAllowed}}
+                        <div class="passkey-notice">访客用户不能使用通行密钥。</div>
+                        {{else if not .PasskeySiteReady}}
+                        <div class="passkey-notice">请先在系统设置中配置正确的站点地址。站点地址仍为初始值时不能绑定通行密钥。</div>
+                        {{else}}
+                        <div class="passkey-actions">
+                            <div class="input-wrapper">
+                                <i class="fas fa-tag"></i>
+                                <input type="text" id="passkeyName" placeholder="通行密钥名称，例如 MacBook 或 iPhone">
+                            </div>
+                            <button type="button" class="btn-passkey" id="registerPasskeyBtn">
+                                <i class="fas fa-plus"></i> 绑定
+                            </button>
+                        </div>
+                        {{end}}
+
+                        <div class="passkey-list">
+                            {{range .Passkeys}}
+                            <div class="passkey-item">
+                                <div>
+                                    <div class="passkey-name">{{if .Name}}{{.Name}}{{else}}通行密钥{{end}}</div>
+                                    <div class="passkey-meta">创建时间: {{.CreatedAtText}}{{if .LastUsedAtText}} / 最近使用: {{.LastUsedAtText}}{{end}}</div>
+                                </div>
+                                {{if $.PasskeyAllowed}}
+                                <button type="button" class="passkey-delete" data-id="{{.ID}}" title="删除通行密钥" aria-label="删除通行密钥">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {{end}}
+                            </div>
+                            {{else}}
+                            <div class="passkey-notice">当前账号尚未绑定通行密钥。</div>
+                            {{end}}
+                        </div>
                     </div>
                 </div>
             </div>

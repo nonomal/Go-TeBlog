@@ -1405,7 +1405,11 @@ func main() {
 				timeoutSeconds = 10
 			}
 			failClosed := getOption(db, "commentFailClosed", "0") == "1"
-			score, err := checkSpamAI(words, apiKey, apiUrl, model, timeoutSeconds)
+			prompt := strings.TrimSpace(getOption(db, "aiCommentPrompt", defaultAICommentModerationPrompt()))
+			if prompt == "" {
+				prompt = defaultAICommentModerationPrompt()
+			}
+			score, err := checkSpamAI(words, apiKey, apiUrl, model, prompt, timeoutSeconds)
 			if err != nil {
 				log.Printf("Comment AI detection failed: cid=%d ip=%s failClosed=%t error=%v", cid, ip, failClosed, err)
 			} else {
@@ -2661,20 +2665,25 @@ func extractSpamScore(content string) (int, bool) {
 	return score, true
 }
 
-func checkSpamAI(words string, apiKey string, apiUrl string, model string, timeoutSeconds int) (int, error) {
+func defaultAICommentModerationPrompt() string {
+	return "你是博客评论安全审核助手。请判断用户提交的评论是否属于垃圾评论、广告推广、无意义内容、政治内容、宗教内容，或包含 SQL 注入、XSS 等恶意攻击内容。请只返回 0 到 9 的单个整数，不要解释：0 表示安全，例如正常的技术讨论、编程或服务器相关内容；5 表示可疑；9 表示确认是垃圾评论、广告、政治或宗教内容、攻击内容，或类似 \"asdf\"、\"12345\"、\"aaaa\" 的无意义内容。如果输入内容既不是中文也不是英文，请评分为 9。"
+}
+
+func checkSpamAI(words string, apiKey string, apiUrl string, model string, prompt string, timeoutSeconds int) (int, error) {
 	if apiKey == "" || apiUrl == "" || model == "" {
 		return 0, fmt.Errorf("ai moderation config missing")
 	}
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 10
 	}
-
-	systemPrompt := "You are an assistant for detecting spam, advertisements, meaningless text, political content, religious content, and malicious content such as SQL injection or XSS. Score user input from 0 to 9, where 0 means safe (e.g., programming or server-related), 5 means suspicious, and 9 means confirmed spam, ads, political or religious content, attacks, or nonsense like \"asdf\", \"12345\", \"aaaa\". If the input is not in English or Chinese, score it as 9. Only return a single integer (0–9) with no explanation."
+	if strings.TrimSpace(prompt) == "" {
+		prompt = defaultAICommentModerationPrompt()
+	}
 
 	requestData := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
+			{"role": "system", "content": prompt},
 			{"role": "user", "content": words},
 		},
 		"max_tokens":  512,

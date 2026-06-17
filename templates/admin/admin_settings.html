@@ -895,6 +895,12 @@
                                     style="margin-top: 8px; font-family: inherit;">{{.AiProofreadPrompt}}</textarea>
                             </div>
                             <div class="form-group full-width">
+                                <label>AI 评论检测提示语</label>
+                                <span class="label-desc">用于前台评论垃圾检测。留空保存时会恢复默认提示语。</span>
+                                <textarea name="aiCommentPrompt" class="full-width" rows="5"
+                                    style="margin-top: 8px; font-family: inherit;">{{.AiCommentPrompt}}</textarea>
+                            </div>
+                            <div class="form-group full-width">
                                 <label>AI 连通性检测</label>
                                 <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，可选择测试语或输入自定义评论检查评论过滤 AI 是否可调用。{{end}}</span>
                                 <select id="aiTestContent" class="full-width"
@@ -1069,6 +1075,7 @@
                     const model = document.querySelector('input[name="aiModel"]').value.trim();
                     const apiKey = document.querySelector('input[name="grokApiKey"]').value.trim();
                     const timeoutSeconds = document.querySelector('input[name="aiTimeoutSeconds"]').value.trim();
+                    const prompt = document.querySelector('textarea[name="aiCommentPrompt"]').value.trim();
                     const testContent = readTestContent();
                     const formData = new URLSearchParams();
 
@@ -1076,6 +1083,7 @@
                     formData.append('aiModel', model);
                     formData.append('grokApiKey', apiKey);
                     formData.append('aiTimeoutSeconds', timeoutSeconds);
+                    formData.append('aiCommentPrompt', prompt);
                     formData.append('aiTestContent', testContent);
 
                     btn.disabled = true;

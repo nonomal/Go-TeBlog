@@ -158,11 +158,13 @@ type SkinConfig struct {
 }
 
 type adminPasskey struct {
-	ID           int
-	CredentialID string
-	Name         string
-	CreatedAt    int64
-	LastUsedAt   int64
+	ID             int
+	CredentialID   string
+	Name           string
+	CreatedAt      int64
+	LastUsedAt     int64
+	CreatedAtText  string
+	LastUsedAtText string
 }
 
 type adminWebAuthnUser struct {
@@ -250,7 +252,7 @@ func (s *adminWebAuthnSessionStore) take(id string) (adminWebAuthnSession, bool)
 }
 
 func adminPasskeysAllowed(username, group string) bool {
-	return strings.TrimSpace(username) != "guest" && strings.TrimSpace(group) != "visitor"
+	return strings.TrimSpace(group) != "visitor"
 }
 
 func adminPasskeySiteURLReady(db *sql.DB) bool {
@@ -345,6 +347,10 @@ func listAdminPasskeys(db *sql.DB, username string) []adminPasskey {
 	for rows.Next() {
 		var item adminPasskey
 		if err := rows.Scan(&item.ID, &item.CredentialID, &item.Name, &item.CreatedAt, &item.LastUsedAt); err == nil {
+			item.CreatedAtText = time.Unix(item.CreatedAt, 0).Format("2006-01-02")
+			if item.LastUsedAt > 0 {
+				item.LastUsedAtText = time.Unix(item.LastUsedAt, 0).Format("2006-01-02")
+			}
 			passkeys = append(passkeys, item)
 		}
 	}
@@ -551,7 +557,7 @@ func buildTOTPQRCodeDataURL(uri string) string {
 }
 
 func adminTOTPAllowed(username, group string) bool {
-	return strings.TrimSpace(username) != "guest" && strings.TrimSpace(group) != "visitor"
+	return strings.TrimSpace(group) != "visitor"
 }
 
 func getSkinConfig(db *sql.DB) SkinConfig {
@@ -1394,7 +1400,7 @@ func main() {
 		group, _ := c.Get("userGroup")
 		userGroup, _ := group.(string)
 		if !adminPasskeysAllowed(username, userGroup) {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "访客用户不能使用通行密钥。"})
 			return
 		}
 		if !adminPasskeySiteURLReady(db) {
@@ -1438,7 +1444,7 @@ func main() {
 		group, _ := c.Get("userGroup")
 		userGroup, _ := group.(string)
 		if !adminPasskeysAllowed(username, userGroup) {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "访客用户不能使用通行密钥。"})
 			return
 		}
 		if !adminPasskeySiteURLReady(db) {
@@ -1479,7 +1485,7 @@ func main() {
 		group, _ := c.Get("userGroup")
 		userGroup, _ := group.(string)
 		if !adminPasskeysAllowed(username, userGroup) {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "访客用户不能使用通行密钥。"})
 			return
 		}
 		id, err := strconv.Atoi(c.Param("id"))
@@ -1505,7 +1511,7 @@ func main() {
 		group, _ := c.Get("userGroup")
 		userGroup, _ := group.(string)
 		if !adminTOTPAllowed(username, userGroup) {
-			renderProfilePage(c, gin.H{"ErrorMessage": "guest 或访客用户不能启用 2FA。"})
+			renderProfilePage(c, gin.H{"ErrorMessage": "访客用户不能启用 2FA。"})
 			return
 		}
 		status := ensureTOTPSetup(db, username, getTOTPIssuer(db))
@@ -1526,7 +1532,7 @@ func main() {
 		group, _ := c.Get("userGroup")
 		userGroup, _ := group.(string)
 		if !adminTOTPAllowed(username, userGroup) {
-			renderProfilePage(c, gin.H{"ErrorMessage": "guest 或访客用户不能设置 2FA。"})
+			renderProfilePage(c, gin.H{"ErrorMessage": "访客用户不能设置 2FA。"})
 			return
 		}
 		status := getTOTPStatus(db, username, getTOTPIssuer(db))
@@ -1662,6 +1668,7 @@ func main() {
 			"AiProofreadMaxChars":        getOption(db, "aiProofreadMaxChars", "0"),
 			"AiProofreadMaxTokens":       getOption(db, "aiProofreadMaxTokens", "16384"),
 			"AiProofreadPrompt":          getOption(db, "aiProofreadPrompt", defaultAIProofreadPrompt()),
+			"AiCommentPrompt":            getOption(db, "aiCommentPrompt", defaultAICommentModerationPrompt()),
 			"CommentAiDetection":         getOption(db, "commentAiDetection", "1"),
 			"DefaultCategory":            getOption(db, "defaultCategory", "1"),
 			"CommentAudit":               getOption(db, "commentAudit", "0"),
@@ -1789,6 +1796,10 @@ func main() {
 		if aiProofreadPrompt == "" {
 			aiProofreadPrompt = defaultAIProofreadPrompt()
 		}
+		aiCommentPrompt := strings.TrimSpace(c.PostForm("aiCommentPrompt"))
+		if aiCommentPrompt == "" {
+			aiCommentPrompt = defaultAICommentModerationPrompt()
+		}
 		commentAiDetection := c.DefaultPostForm("commentAiDetection", "0")
 		sessionTimeout := c.PostForm("sessionTimeout")
 		keywords := c.PostForm("keywords")
@@ -1852,6 +1863,7 @@ func main() {
 		setOption(db, "aiProofreadMaxChars", strconv.Itoa(aiProofreadMaxChars))
 		setOption(db, "aiProofreadMaxTokens", strconv.Itoa(aiProofreadMaxTokens))
 		setOption(db, "aiProofreadPrompt", aiProofreadPrompt)
+		setOption(db, "aiCommentPrompt", aiCommentPrompt)
 		setOption(db, "commentAiDetection", commentAiDetection)
 		setOption(db, "sessionTimeout", sessionTimeout)
 		setOption(db, "keywords", keywords)
@@ -2038,6 +2050,10 @@ func main() {
 		apiURL := strings.TrimSpace(c.PostForm("aiApiUrl"))
 		model := strings.TrimSpace(c.PostForm("aiModel"))
 		timeoutSeconds := normalizeAITimeoutSeconds(c.PostForm("aiTimeoutSeconds"))
+		prompt := strings.TrimSpace(c.PostForm("aiCommentPrompt"))
+		if prompt == "" {
+			prompt = defaultAICommentModerationPrompt()
+		}
 		testContent := strings.TrimSpace(c.PostForm("aiTestContent"))
 		if apiKey == "" || apiURL == "" || model == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -2050,7 +2066,7 @@ func main() {
 			testContent = "这是一条正常的测试评论，用于检测评论过滤 AI 接口是否可正常调用。"
 		}
 
-		score, err := checkSpamAITestComment(testContent, apiKey, apiURL, model, timeoutSeconds)
+		score, err := checkSpamAITestComment(testContent, apiKey, apiURL, model, prompt, timeoutSeconds)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"ok":      false,
@@ -3699,6 +3715,10 @@ func defaultAIProofreadPrompt() string {
 	return "你帮我处理一下现在正在撰写的文章内容，只整理排版、段落、错别字和标点，在不改变原意、语气、观点和事实的前提下适当优化自然语言表达与阅读流畅度，但禁止润色、扩写、缩写、重写观点或加入任何新内容。如果发现 Markdown 语法、链接、图片、代码块、HTML 或 Typecho 标签，务必保持原样，包括字符内容、顺序和所在位置，不要改写、移动、删除或补全。直接输出整理后的全文。"
 }
 
+func defaultAICommentModerationPrompt() string {
+	return "你是博客评论安全审核助手。请判断用户提交的评论是否属于垃圾评论、广告推广、无意义内容、政治内容、宗教内容，或包含 SQL 注入、XSS 等恶意攻击内容。请只返回 0 到 9 的单个整数，不要解释：0 表示安全，例如正常的技术讨论、编程或服务器相关内容；5 表示可疑；9 表示确认是垃圾评论、广告、政治或宗教内容、攻击内容，或类似 \"asdf\"、\"12345\"、\"aaaa\" 的无意义内容。如果输入内容既不是中文也不是英文，请评分为 9。"
+}
+
 func proofreadPostTextWithAI(text string, apiKey string, apiURL string, model string, prompt string, maxTokens int, timeoutSeconds int) (string, error) {
 	if apiKey == "" || apiURL == "" || model == "" {
 		return "", fmt.Errorf("AI 校稿配置缺失：请填写 AI API URL、AI Model 和 AI API Key")
@@ -3758,20 +3778,21 @@ func isAITokenLimitError(err error) bool {
 		strings.Contains(msg, "too many tokens")
 }
 
-func checkSpamAITestComment(words string, apiKey string, apiURL string, model string, timeoutSeconds int) (int, error) {
+func checkSpamAITestComment(words string, apiKey string, apiURL string, model string, prompt string, timeoutSeconds int) (int, error) {
 	if apiKey == "" || apiURL == "" || model == "" {
 		return 0, fmt.Errorf("AI 检测配置缺失：请填写 AI API URL、AI Model 和 AI API Key")
 	}
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 10
 	}
-
-	systemPrompt := "You are an assistant for detecting spam, advertisements, meaningless text, political content, religious content, and malicious content such as SQL injection or XSS. Score user input from 0 to 9, where 0 means safe (e.g., programming or server-related), 5 means suspicious, and 9 means confirmed spam, ads, political or religious content, attacks, or nonsense like \"asdf\", \"12345\", \"aaaa\". If the input is not in English or Chinese, score it as 9. Only return a single integer (0–9) with no explanation."
+	if strings.TrimSpace(prompt) == "" {
+		prompt = defaultAICommentModerationPrompt()
+	}
 
 	requestData := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
+			{"role": "system", "content": prompt},
 			{"role": "user", "content": words},
 		},
 		"max_tokens":  512,
