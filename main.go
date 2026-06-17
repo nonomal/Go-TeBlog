@@ -1801,6 +1801,15 @@ func initDB(db *sql.DB) {
 			"username" TEXT,
 			"created_at" INTEGER
 		)`,
+		`CREATE TABLE IF NOT EXISTS "go_passkeys" (
+			"id" INTEGER PRIMARY KEY AUTOINCREMENT,
+			"username" TEXT NOT NULL,
+			"credential_id" TEXT NOT NULL UNIQUE,
+			"credential_name" TEXT,
+			"credential_json" TEXT NOT NULL,
+			"created_at" INTEGER,
+			"last_used_at" INTEGER DEFAULT 0
+		)`,
 		`CREATE TABLE IF NOT EXISTS "go_options" (
 			"name" TEXT PRIMARY KEY,
 			"value" TEXT
@@ -1828,6 +1837,7 @@ func initDB(db *sql.DB) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS "idx_stats_created" ON "go_stats_logs" ("created")`,
 		`CREATE INDEX IF NOT EXISTS "idx_stats_bot" ON "go_stats_logs" ("is_bot")`,
+		`CREATE INDEX IF NOT EXISTS "idx_go_passkeys_username" ON "go_passkeys" ("username")`,
 		`CREATE INDEX IF NOT EXISTS "idx_cf_shield_logs_created" ON "go_cf_shield_logs" ("created")`,
 	}
 

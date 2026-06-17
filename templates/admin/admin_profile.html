@@ -234,7 +234,8 @@
             font-size: 0.9rem;
         }
 
-        input[type="password"] {
+        input[type="password"],
+        input[type="text"] {
             width: 100%;
             padding: 12px 12px 12px 40px;
             border: 1px solid #e2e8f0;
@@ -245,11 +246,110 @@
             background: #f8fafc;
         }
 
-        input[type="password"]:focus {
+        input[type="password"]:focus,
+        input[type="text"]:focus {
             outline: none;
             border-color: #0984e3;
             background: white;
             box-shadow: 0 0 0 4px rgba(9, 132, 227, 0.1);
+        }
+
+        .security-section {
+            border-top: 1px solid #e2e8f0;
+            margin-top: 34px;
+            padding-top: 30px;
+        }
+
+        .security-section h3 {
+            margin: 0 0 16px;
+            font-size: 1rem;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .passkey-list {
+            display: grid;
+            gap: 10px;
+            margin: 16px 0;
+        }
+
+        .passkey-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .passkey-name {
+            font-weight: 600;
+            color: #334155;
+            font-size: 0.9rem;
+        }
+
+        .passkey-meta {
+            margin-top: 4px;
+            color: #94a3b8;
+            font-size: 0.75rem;
+        }
+
+        .passkey-delete {
+            border: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            color: #dc2626;
+            background: #fee2e2;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+
+        .passkey-delete:hover {
+            background: #fecaca;
+        }
+
+        .passkey-actions {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn-passkey {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .btn-passkey:hover {
+            background: #0f9f71;
+        }
+
+        .btn-passkey:disabled,
+        .passkey-delete:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .passkey-notice {
+            padding: 13px 14px;
+            border-radius: 12px;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            color: #9a3412;
+            font-size: 0.82rem;
+            line-height: 1.55;
         }
 
         .security-tips {
@@ -401,10 +501,91 @@
                         <li>建议每 3-6 个月更换一次管理后台密码。</li>
                     </ul>
                 </div>
+
+                <div class="security-section">
+                    <h3><i class="fas fa-fingerprint"></i> 通行密钥</h3>
+                    {{if not .PasskeyAllowed}}
+                    <div class="passkey-notice">guest 或访客用户不能使用通行密钥。</div>
+                    {{else if not .PasskeySiteReady}}
+                    <div class="passkey-notice">请先在系统设置中配置正确的站点地址。站点地址仍为初始值时不能绑定通行密钥。</div>
+                    {{else}}
+                    <div class="passkey-actions">
+                        <div class="input-wrapper">
+                            <i class="fas fa-tag"></i>
+                            <input type="text" id="passkeyName" placeholder="通行密钥名称，例如 MacBook 或 iPhone">
+                        </div>
+                        <button type="button" class="btn-passkey" id="registerPasskeyBtn">
+                            <i class="fas fa-plus"></i> 绑定
+                        </button>
+                    </div>
+                    {{end}}
+
+                    <div class="passkey-list">
+                        {{range .Passkeys}}
+                        <div class="passkey-item">
+                            <div>
+                                <div class="passkey-name">{{if .Name}}{{.Name}}{{else}}通行密钥{{end}}</div>
+                                <div class="passkey-meta">创建时间戳: {{.CreatedAt}}{{if .LastUsedAt}} / 最近使用: {{.LastUsedAt}}{{end}}</div>
+                            </div>
+                            {{if $.PasskeyAllowed}}
+                            <button type="button" class="passkey-delete" data-id="{{.ID}}" title="删除通行密钥" aria-label="删除通行密钥">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            {{end}}
+                        </div>
+                        {{else}}
+                        <div class="passkey-notice">当前账号尚未绑定通行密钥。</div>
+                        {{end}}
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 <script>
+function base64urlToBuffer(value) {
+  const base64 = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function bufferToBase64url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function prepareCreationOptions(options) {
+  options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
+  options.publicKey.user.id = base64urlToBuffer(options.publicKey.user.id);
+  if (Array.isArray(options.publicKey.excludeCredentials)) {
+    options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(function (item) {
+      item.id = base64urlToBuffer(item.id);
+      return item;
+    });
+  }
+  return options;
+}
+
+function credentialToJSON(credential) {
+  return {
+    id: credential.id,
+    rawId: bufferToBase64url(credential.rawId),
+    type: credential.type,
+    response: {
+      attestationObject: bufferToBase64url(credential.response.attestationObject),
+      clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
+    }
+  };
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   const userMenu = document.querySelector('.user-menu');
   if (userMenu) {
@@ -416,6 +597,78 @@ document.addEventListener('DOMContentLoaded', function () {
       userMenu.classList.remove('open');
     });
   }
+
+  const registerBtn = document.getElementById('registerPasskeyBtn');
+  if (registerBtn) {
+    registerBtn.addEventListener('click', async function () {
+      if (!window.PublicKeyCredential) {
+        alert('当前浏览器不支持通行密钥。');
+        return;
+      }
+      const nameInput = document.getElementById('passkeyName');
+      const passkeyName = nameInput ? nameInput.value.trim() : '';
+      registerBtn.disabled = true;
+      registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 等待确认';
+      try {
+        const beginResp = await fetch('{{adminPath}}/profile/passkey/register/options', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+        const beginData = await beginResp.json();
+        if (!beginData.success) {
+          throw new Error(beginData.message || '通行密钥绑定初始化失败。');
+        }
+        const credential = await navigator.credentials.create(prepareCreationOptions(beginData.options));
+        const finishResp = await fetch('{{adminPath}}/profile/passkey/register/finish?challenge=' + encodeURIComponent(beginData.challenge) + '&name=' + encodeURIComponent(passkeyName), {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify(credentialToJSON(credential))
+        });
+        const finishData = await finishResp.json();
+        if (!finishData.success) {
+          throw new Error(finishData.message || '通行密钥绑定失败。');
+        }
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || '通行密钥绑定失败。');
+        registerBtn.disabled = false;
+        registerBtn.innerHTML = '<i class="fas fa-plus"></i> 绑定';
+      }
+    });
+  }
+
+  document.querySelectorAll('.passkey-delete').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      if (!confirm('确定要删除这个通行密钥吗？')) {
+        return;
+      }
+      button.disabled = true;
+      try {
+        const resp = await fetch('{{adminPath}}/profile/passkey/delete/' + encodeURIComponent(button.dataset.id), {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+        const data = await resp.json();
+        if (!data.success) {
+          throw new Error(data.message || '删除通行密钥失败。');
+        }
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || '删除通行密钥失败。');
+        button.disabled = false;
+      }
+    });
+  });
 });
 </script>
 </body>

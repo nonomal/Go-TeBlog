@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +27,8 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/protocol"
+	webauthnlib "github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -147,6 +151,262 @@ type SkinConfig struct {
 	LayoutWidgetPadding string
 }
 
+type adminPasskey struct {
+	ID           int
+	CredentialID string
+	Name         string
+	CreatedAt    int64
+	LastUsedAt   int64
+}
+
+type adminWebAuthnUser struct {
+	UID         int
+	Name        string
+	DisplayName string
+	Credentials []webauthnlib.Credential
+}
+
+func (u adminWebAuthnUser) WebAuthnID() []byte {
+	return []byte(strconv.Itoa(u.UID))
+}
+
+func (u adminWebAuthnUser) WebAuthnName() string {
+	return u.Name
+}
+
+func (u adminWebAuthnUser) WebAuthnDisplayName() string {
+	if strings.TrimSpace(u.DisplayName) != "" {
+		return u.DisplayName
+	}
+	return u.Name
+}
+
+func (u adminWebAuthnUser) WebAuthnIcon() string {
+	return ""
+}
+
+func (u adminWebAuthnUser) WebAuthnCredentials() []webauthnlib.Credential {
+	return u.Credentials
+}
+
+type adminWebAuthnSession struct {
+	Username  string
+	Session   webauthnlib.SessionData
+	ExpiresAt int64
+}
+
+type adminWebAuthnSessionStore struct {
+	mu       sync.Mutex
+	sessions map[string]adminWebAuthnSession
+}
+
+func newAdminWebAuthnSessionStore() *adminWebAuthnSessionStore {
+	return &adminWebAuthnSessionStore{sessions: make(map[string]adminWebAuthnSession)}
+}
+
+func (s *adminWebAuthnSessionStore) put(username string, session *webauthnlib.SessionData) string {
+	if session == nil {
+		return ""
+	}
+	id := uuid.New().String()
+	now := time.Now().Unix()
+	s.mu.Lock()
+	for key, item := range s.sessions {
+		if item.ExpiresAt <= now {
+			delete(s.sessions, key)
+		}
+	}
+	s.sessions[id] = adminWebAuthnSession{
+		Username:  username,
+		Session:   *session,
+		ExpiresAt: now + 300,
+	}
+	s.mu.Unlock()
+	return id
+}
+
+func (s *adminWebAuthnSessionStore) take(id string) (adminWebAuthnSession, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return adminWebAuthnSession{}, false
+	}
+	now := time.Now().Unix()
+	s.mu.Lock()
+	item, ok := s.sessions[id]
+	if ok {
+		delete(s.sessions, id)
+	}
+	s.mu.Unlock()
+	if !ok || item.ExpiresAt <= now {
+		return adminWebAuthnSession{}, false
+	}
+	return item, true
+}
+
+func adminPasskeysAllowed(username, group string) bool {
+	return strings.TrimSpace(username) != "guest" && strings.TrimSpace(group) != "visitor"
+}
+
+func adminPasskeySiteURLReady(db *sql.DB) bool {
+	configured := strings.TrimSpace(getOption(db, "siteUrl", ""))
+	if configured == "" {
+		return false
+	}
+	normalized := normalizeAdminSiteURL(configured)
+	return normalized != "http://localhost:8190"
+}
+
+func newAdminWebAuthn(db *sql.DB) (*webauthnlib.WebAuthn, error) {
+	siteURL := normalizeAdminSiteURL(getOption(db, "siteUrl", "http://localhost:8190"))
+	parsed, err := url.Parse(siteURL)
+	if err != nil || parsed.Host == "" || parsed.Scheme == "" {
+		siteURL = "http://localhost:8190"
+		parsed, _ = url.Parse(siteURL)
+	}
+	rpID := parsed.Hostname()
+	if rpID == "" {
+		rpID = "localhost"
+	}
+	origin := parsed.Scheme + "://" + parsed.Host
+	return webauthnlib.New(&webauthnlib.Config{
+		RPDisplayName: "Go-TeBlog",
+		RPID:          rpID,
+		RPOrigins:     []string{origin},
+	})
+}
+
+func normalizeAdminSiteURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "http://localhost:8190"
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return "http://" + trimmed
+}
+
+func loadAdminWebAuthnUser(db *sql.DB, username string) (adminWebAuthnUser, string, error) {
+	var user adminWebAuthnUser
+	var group string
+	err := db.QueryRow(`SELECT uid, name, COALESCE(screenName, ''), COALESCE("group", 'visitor') FROM typecho_users WHERE name=?`, username).
+		Scan(&user.UID, &user.Name, &user.DisplayName, &group)
+	if err != nil {
+		return user, group, err
+	}
+
+	rows, err := db.Query("SELECT credential_json FROM go_passkeys WHERE username=? ORDER BY id ASC", username)
+	if err != nil {
+		return user, group, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		var credential webauthnlib.Credential
+		if err := json.Unmarshal([]byte(raw), &credential); err != nil {
+			log.Printf("Passkey credential parse failed for user %s: %v", username, err)
+			continue
+		}
+		user.Credentials = append(user.Credentials, credential)
+	}
+	return user, group, nil
+}
+
+func loadAdminWebAuthnUserByHandle(db *sql.DB, userHandle []byte) (adminWebAuthnUser, string, error) {
+	uidStr := strings.TrimSpace(string(userHandle))
+	if uidStr == "" {
+		return adminWebAuthnUser{}, "", fmt.Errorf("用户标识为空")
+	}
+	var username string
+	err := db.QueryRow("SELECT name FROM typecho_users WHERE uid=?", uidStr).Scan(&username)
+	if err != nil {
+		return adminWebAuthnUser{}, "", err
+	}
+	return loadAdminWebAuthnUser(db, username)
+}
+
+func listAdminPasskeys(db *sql.DB, username string) []adminPasskey {
+	rows, err := db.Query("SELECT id, credential_id, COALESCE(credential_name, ''), created_at, COALESCE(last_used_at, 0) FROM go_passkeys WHERE username=? ORDER BY created_at DESC, id DESC", username)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var passkeys []adminPasskey
+	for rows.Next() {
+		var item adminPasskey
+		if err := rows.Scan(&item.ID, &item.CredentialID, &item.Name, &item.CreatedAt, &item.LastUsedAt); err == nil {
+			passkeys = append(passkeys, item)
+		}
+	}
+	return passkeys
+}
+
+func saveAdminPasskey(db *sql.DB, username, name string, credential *webauthnlib.Credential) error {
+	if credential == nil {
+		return fmt.Errorf("通行密钥数据为空")
+	}
+	raw, err := json.Marshal(credential)
+	if err != nil {
+		return err
+	}
+	credentialID := base64.RawURLEncoding.EncodeToString(credential.ID)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "通行密钥"
+	}
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO go_passkeys (username, credential_id, credential_name, credential_json, created_at, last_used_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(credential_id) DO UPDATE SET credential_name=excluded.credential_name, credential_json=excluded.credential_json, last_used_at=excluded.last_used_at`,
+		username, credentialID, name, string(raw), now, now)
+	return err
+}
+
+func updateAdminPasskeyUse(db *sql.DB, username string, credential *webauthnlib.Credential) {
+	if credential == nil {
+		return
+	}
+	raw, err := json.Marshal(credential)
+	if err != nil {
+		log.Printf("Passkey credential marshal failed for user %s: %v", username, err)
+		return
+	}
+	credentialID := base64.RawURLEncoding.EncodeToString(credential.ID)
+	_, err = db.Exec("UPDATE go_passkeys SET credential_json=?, last_used_at=? WHERE username=? AND credential_id=?",
+		string(raw), time.Now().Unix(), username, credentialID)
+	if err != nil {
+		log.Printf("Passkey credential update failed for user %s: %v", username, err)
+	}
+}
+
+func createAdminSession(db *sql.DB, c *gin.Context, username string) error {
+	timeout := getOptionInt(db, "sessionTimeout", 30) * 60
+	db.Exec("DELETE FROM go_sessions WHERE created_at < ?", time.Now().Unix()-int64(timeout))
+	db.Exec("DELETE FROM go_sessions WHERE username = ?", username)
+	db.Exec("UPDATE typecho_users SET logged = ? WHERE name = ?", time.Now().Unix(), username)
+
+	sessionID := uuid.New().String()
+	_, err := db.Exec("INSERT INTO go_sessions (session_id, username, created_at) VALUES (?, ?, ?)",
+		sessionID, username, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	c.SetCookie("te_auth", sessionID, timeout, "/", "", false, true)
+	return nil
+}
+
+func webAuthnOptionsJSON(value interface{}) template.JS {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return template.JS("null")
+	}
+	return template.JS(raw)
+}
+
 func getSkinConfig(db *sql.DB) SkinConfig {
 	theme := sanitizeThemeName(getOption(db, "theme", "default"), "default")
 	return SkinConfig{
@@ -267,6 +527,23 @@ func main() {
 		log.Fatal("Failed to create sessions table:", err)
 	}
 
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS go_passkeys (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		credential_id TEXT NOT NULL UNIQUE,
+		credential_name TEXT,
+		credential_json TEXT NOT NULL,
+		created_at INTEGER,
+		last_used_at INTEGER DEFAULT 0
+	)`)
+	if err != nil {
+		log.Fatal("Failed to create passkeys table:", err)
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_go_passkeys_username ON go_passkeys (username)`)
+	if err != nil {
+		log.Fatal("Failed to create passkeys index:", err)
+	}
+
 	// Ensure options table exists
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS go_options (
 		name TEXT PRIMARY KEY,
@@ -324,6 +601,7 @@ func main() {
 			html.WithUnsafe(),
 		),
 	)
+	passkeySessions := newAdminWebAuthnSessionStore()
 	r.SetFuncMap(template.FuncMap{
 		"now": func() time.Time { return time.Now() },
 		"substring": func(s string, l int) string {
@@ -350,7 +628,8 @@ func main() {
 			hash := md5.Sum([]byte(normalized))
 			return fmt.Sprintf("https://www.gravatar.com/avatar/%x?s=80&d=identicon", hash)
 		},
-		"adminPath": func() string { return adminPath },
+		"adminPath":      func() string { return adminPath },
+		"passkeyOptions": webAuthnOptionsJSON,
 		// 分页辅助函数
 		"iterate": func(start, end int) []int {
 			var result []int
@@ -449,26 +728,19 @@ func main() {
 	})
 
 	r.POST(adminPath+"/login", func(c *gin.Context) {
-		username := c.PostForm("username")
+		username := strings.TrimSpace(c.PostForm("username"))
 		password := c.PostForm("password")
+		wantsJSON := strings.Contains(c.GetHeader("Accept"), "application/json") || c.GetHeader("X-Requested-With") == "XMLHttpRequest"
 
 		var storedHash string
 		err := db.QueryRow("SELECT password FROM typecho_users WHERE name=?", username).Scan(&storedHash)
 
 		if err == nil && checkTypechoHash(password, storedHash) {
-			timeout := getOptionInt(db, "sessionTimeout", 30) * 60
-			// Cleanup old sessions
-			db.Exec("DELETE FROM go_sessions WHERE created_at < ?", time.Now().Unix()-int64(timeout))
-			// 单点登录：清理该账号已有会话，确保新登录踢出旧登录
-			db.Exec("DELETE FROM go_sessions WHERE username = ?", username)
-
-			// 更新最后登录时间
-			db.Exec("UPDATE typecho_users SET logged = ? WHERE name = ?", time.Now().Unix(), username)
-
-			sessionID := uuid.New().String()
-			_, err = db.Exec("INSERT INTO go_sessions (session_id, username, created_at) VALUES (?, ?, ?)",
-				sessionID, username, time.Now().Unix())
-			if err != nil {
+			if err := createAdminSession(db, c, username); err != nil {
+				if wantsJSON {
+					c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建会话时出现错误，请重新尝试登录。"})
+					return
+				}
 				c.HTML(http.StatusInternalServerError, "admin_error.html", gin.H{
 					"AdminPath":    adminPath,
 					"ErrorTitle":   "登录失败",
@@ -476,15 +748,87 @@ func main() {
 				})
 				return
 			}
-			c.SetCookie("te_auth", sessionID, timeout, "/", "", false, true)
-			c.Redirect(http.StatusFound, adminPath+"/dashboard")
+			if wantsJSON {
+				c.JSON(http.StatusOK, gin.H{"success": true, "redirect": adminPath + "/dashboard"})
+			} else {
+				c.Redirect(http.StatusFound, adminPath+"/dashboard")
+			}
 		} else {
+			if wantsJSON {
+				c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户名或密码错误，请重新输入。"})
+				return
+			}
 			c.HTML(http.StatusUnauthorized, "admin_error.html", gin.H{
 				"AdminPath":    adminPath,
 				"ErrorTitle":   "登录失败",
 				"ErrorMessage": "用户名或密码错误，请重新输入。",
 			})
 		}
+	})
+
+	r.POST(adminPath+"/login/passkey/options", func(c *gin.Context) {
+		if !adminPasskeySiteURLReady(db) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请先在系统设置中配置正确的站点地址，再使用通行密钥登录。"})
+			return
+		}
+		webauthn, err := newAdminWebAuthn(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥服务初始化失败"})
+			return
+		}
+		options, session, err := webauthn.BeginDiscoverableLogin(webauthnlib.WithUserVerification(protocol.VerificationRequired))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥验证初始化失败"})
+			return
+		}
+		challengeID := passkeySessions.put("", session)
+		if challengeID == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥挑战创建失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "challenge": challengeID, "options": options})
+	})
+
+	r.POST(adminPath+"/login/passkey", func(c *gin.Context) {
+		challengeID := strings.TrimSpace(c.Query("challenge"))
+		challenge, ok := passkeySessions.take(challengeID)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "通行密钥验证已过期，请重新登录。"})
+			return
+		}
+
+		webauthn, err := newAdminWebAuthn(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥服务初始化失败"})
+			return
+		}
+		discoveredUsername := ""
+		handler := func(rawID, userHandle []byte) (webauthnlib.User, error) {
+			webAuthnUser, group, err := loadAdminWebAuthnUserByHandle(db, userHandle)
+			if err != nil {
+				return nil, err
+			}
+			if !adminPasskeysAllowed(webAuthnUser.Name, group) || len(webAuthnUser.Credentials) == 0 {
+				return nil, fmt.Errorf("当前账号不可使用通行密钥")
+			}
+			discoveredUsername = webAuthnUser.Name
+			return webAuthnUser, nil
+		}
+		credential, err := webauthn.FinishDiscoverableLogin(handler, challenge.Session, c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "通行密钥验证失败。"})
+			return
+		}
+		if discoveredUsername == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "通行密钥账号识别失败。"})
+			return
+		}
+		updateAdminPasskeyUse(db, discoveredUsername, credential)
+		if err := createAdminSession(db, c, discoveredUsername); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建会话失败，请重新登录。"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "redirect": adminPath + "/dashboard"})
 	})
 
 	r.GET(adminPath, func(c *gin.Context) {
@@ -843,24 +1187,150 @@ func main() {
 	admin.GET("/profile", func(c *gin.Context) {
 		username, _ := c.Get("username")
 		adminPath, _ := c.Get("adminPath")
+		group, _ := c.Get("userGroup")
+		userGroup, _ := group.(string)
 		c.HTML(http.StatusOK, "admin_profile.html", gin.H{
-			"Username":  username,
-			"Tab":       "profile",
-			"AdminPath": adminPath,
+			"Username":         username,
+			"UserGroup":        userGroup,
+			"Tab":              "profile",
+			"AdminPath":        adminPath,
+			"Passkeys":         listAdminPasskeys(db, fmt.Sprint(username)),
+			"PasskeyAllowed":   adminPasskeysAllowed(fmt.Sprint(username), userGroup),
+			"PasskeySiteReady": adminPasskeySiteURLReady(db),
 		})
+	})
+
+	admin.POST("/profile/passkey/register/options", writeProtectMiddleware, func(c *gin.Context) {
+		username := fmt.Sprint(c.MustGet("username"))
+		group, _ := c.Get("userGroup")
+		userGroup, _ := group.(string)
+		if !adminPasskeysAllowed(username, userGroup) {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			return
+		}
+		if !adminPasskeySiteURLReady(db) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请先在系统设置中配置正确的站点地址，再绑定通行密钥。"})
+			return
+		}
+		webAuthnUser, _, err := loadAdminWebAuthnUser(db, username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取用户信息失败。"})
+			return
+		}
+		webauthn, err := newAdminWebAuthn(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥服务初始化失败。"})
+			return
+		}
+		authSelect := protocol.AuthenticatorSelection{
+			RequireResidentKey: protocol.ResidentKeyRequired(),
+			ResidentKey:        protocol.ResidentKeyRequirementRequired,
+			UserVerification:   protocol.VerificationRequired,
+		}
+		options, session, err := webauthn.BeginRegistration(
+			webAuthnUser,
+			webauthnlib.WithAuthenticatorSelection(authSelect),
+			webauthnlib.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥绑定初始化失败。"})
+			return
+		}
+		challengeID := passkeySessions.put(username, session)
+		if challengeID == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥挑战创建失败。"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "challenge": challengeID, "options": options})
+	})
+
+	admin.POST("/profile/passkey/register/finish", writeProtectMiddleware, func(c *gin.Context) {
+		username := fmt.Sprint(c.MustGet("username"))
+		group, _ := c.Get("userGroup")
+		userGroup, _ := group.(string)
+		if !adminPasskeysAllowed(username, userGroup) {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			return
+		}
+		if !adminPasskeySiteURLReady(db) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请先在系统设置中配置正确的站点地址，再绑定通行密钥。"})
+			return
+		}
+		challengeID := strings.TrimSpace(c.Query("challenge"))
+		challenge, ok := passkeySessions.take(challengeID)
+		if !ok || challenge.Username != username {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "通行密钥绑定已过期，请重试。"})
+			return
+		}
+		webAuthnUser, _, err := loadAdminWebAuthnUser(db, username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取用户信息失败。"})
+			return
+		}
+		webauthn, err := newAdminWebAuthn(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "通行密钥服务初始化失败。"})
+			return
+		}
+		credential, err := webauthn.FinishRegistration(webAuthnUser, challenge.Session, c.Request)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "通行密钥绑定失败。"})
+			return
+		}
+		name := strings.TrimSpace(c.Query("name"))
+		if err := saveAdminPasskey(db, username, name, credential); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存通行密钥失败。"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "通行密钥绑定成功。"})
+	})
+
+	admin.POST("/profile/passkey/delete/:id", writeProtectMiddleware, func(c *gin.Context) {
+		username := fmt.Sprint(c.MustGet("username"))
+		group, _ := c.Get("userGroup")
+		userGroup, _ := group.(string)
+		if !adminPasskeysAllowed(username, userGroup) {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "guest 或访客用户不能使用通行密钥。"})
+			return
+		}
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "通行密钥编号无效。"})
+			return
+		}
+		result, err := db.Exec("DELETE FROM go_passkeys WHERE id=? AND username=?", id, username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "删除通行密钥失败。"})
+			return
+		}
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "通行密钥不存在。"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "通行密钥已删除。"})
 	})
 
 	admin.POST("/profile", writeProtectMiddleware, func(c *gin.Context) {
 		username, _ := c.Get("username")
+		group, _ := c.Get("userGroup")
+		userGroup, _ := group.(string)
+		renderProfile := func(data gin.H) {
+			data["Username"] = username
+			data["UserGroup"] = userGroup
+			data["Tab"] = "profile"
+			data["AdminPath"] = adminPath
+			data["Passkeys"] = listAdminPasskeys(db, fmt.Sprint(username))
+			data["PasskeyAllowed"] = adminPasskeysAllowed(fmt.Sprint(username), userGroup)
+			data["PasskeySiteReady"] = adminPasskeySiteURLReady(db)
+			c.HTML(http.StatusOK, "admin_profile.html", data)
+		}
 		oldPassword := c.PostForm("old_password")
 		newPassword := c.PostForm("new_password")
 		confirmPassword := c.PostForm("confirm_password")
 
 		if newPassword != confirmPassword {
-			c.HTML(http.StatusOK, "admin_profile.html", gin.H{
-				"Username":     username,
-				"Tab":          "profile",
-				"AdminPath":    adminPath,
+			renderProfile(gin.H{
 				"ErrorMessage": "两次输入的新密码不一致",
 			})
 			return
@@ -869,10 +1339,7 @@ func main() {
 		var storedHash string
 		err := db.QueryRow("SELECT password FROM typecho_users WHERE name=?", username).Scan(&storedHash)
 		if err != nil || !checkTypechoHash(oldPassword, storedHash) {
-			c.HTML(http.StatusOK, "admin_profile.html", gin.H{
-				"Username":     username,
-				"Tab":          "profile",
-				"AdminPath":    adminPath,
+			renderProfile(gin.H{
 				"ErrorMessage": "旧密码错误",
 			})
 			return
@@ -881,19 +1348,13 @@ func main() {
 		newHash := hashTypecho(newPassword)
 		_, err = db.Exec("UPDATE typecho_users SET password=? WHERE name=?", newHash, username)
 		if err != nil {
-			c.HTML(http.StatusOK, "admin_profile.html", gin.H{
-				"Username":     username,
-				"Tab":          "profile",
-				"AdminPath":    adminPath,
+			renderProfile(gin.H{
 				"ErrorMessage": "数据库更新失败",
 			})
 			return
 		}
 
-		c.HTML(http.StatusOK, "admin_profile.html", gin.H{
-			"Username":       username,
-			"Tab":            "profile",
-			"AdminPath":      adminPath,
+		renderProfile(gin.H{
 			"SuccessMessage": "密码修改成功",
 		})
 	})
