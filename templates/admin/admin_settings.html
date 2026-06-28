@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>{{if eq .ActiveSection "skin"}}皮肤设置{{else}}系统设置{{end}} - Go-TeBlog</title>
+    <title>系统设置 - Go-TeBlog</title>
     <link rel="stylesheet" href="/blog/usr/themes/default/css/font-awesome.min.css">
     <style>
         body {
@@ -533,7 +533,7 @@
     <div class="content">
         <div class="settings-container">
             <div class="settings-titlebar">
-                <h1>{{if eq .ActiveSection "skin"}}皮肤设置{{else}}系统设置{{end}}</h1>
+                <h1>系统设置</h1>
             </div>
 
             {{if .SuccessMessage}}
@@ -543,23 +543,21 @@
             </div>
             {{end}}
 
-            {{if eq .ActiveSection "skin"}}
-            <form action="{{adminPath}}/settings/skin" method="POST">
-            {{else}}
             <form action="{{adminPath}}/settings" method="POST" id="settingsForm">
                 <input type="hidden" name="activeSection" value="{{.ActiveSection}}">
-                {{if ne .ActiveSection "skin"}}
                 <div class="settings-tabs" role="tablist" aria-label="系统设置分组">
                     <button type="button" class="settings-tab active" data-settings-tab="basic" role="tab"
                         aria-selected="true"><i class="fas fa-info-circle"></i>基础信息</button>
                     <button type="button" class="settings-tab" data-settings-tab="display" role="tab"
                         aria-selected="false"><i class="fas fa-desktop"></i>展示阅读</button>
-                    <button type="button" class="settings-tab" data-settings-tab="shield" role="tab"
-                        aria-selected="false"><i class="fas fa-cloud"></i>访问防护</button>
+                    <button type="button" class="settings-tab" data-settings-tab="skin" role="tab"
+                        aria-selected="false"><i class="fas fa-paint-brush"></i>皮肤设置</button>
                     <button type="button" class="settings-tab" data-settings-tab="comments" role="tab"
                         aria-selected="false"><i class="fas fa-shield-alt"></i>评论过滤</button>
                     <button type="button" class="settings-tab" data-settings-tab="ai" role="tab"
                         aria-selected="false"><i class="fas fa-robot"></i>AI系统参数</button>
+                    <button type="button" class="settings-tab" data-settings-tab="shield" role="tab"
+                        aria-selected="false"><i class="fas fa-cloud"></i>访问防护</button>
                     <button type="button" class="settings-tab" data-settings-tab="advanced" role="tab"
                         aria-selected="false"><i class="fas fa-sliders-h"></i>其它设置</button>
                 </div>
@@ -682,177 +680,108 @@
                     </div>
                 </div>
 
-                {{end}}
-                {{end}}
-
-                {{if eq .ActiveSection "skin"}}
                 <!-- 皮肤设置 -->
-                <div class="settings-section" id="skin-settings">
+                <div class="settings-section" id="skin-settings" data-settings-panel="skin" role="tabpanel">
                     <div class="section-header">
                         <i class="fas fa-paint-brush"></i>
                         <h3>皮肤设置</h3>
                     </div>
                     <div class="section-body">
+                        <p class="label-desc" style="margin-top: 0; margin-bottom: 24px;">皮肤参数沿用原保存接口，这一组需要单独点击保存。</p>
                         <div class="form-grid">
                             <div class="form-group">
                                 <label>皮肤目录</label>
                                 <span class="label-desc">对应 <code>/blog/usr/themes/</code> 下的目录名。</span>
-                                <input type="text" name="theme" value="{{.Skin.Theme}}" required placeholder="default">
+                                <input type="text" name="theme" value="{{.Skin.Theme}}" required placeholder="default" form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>主色</label>
-                                <input type="text" name="primaryColor" value="{{.Skin.PrimaryColor}}" required>
+                                <input type="text" name="primaryColor" value="{{.Skin.PrimaryColor}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>主色悬停</label>
-                                <input type="text" name="primaryHover" value="{{.Skin.PrimaryHover}}" required>
+                                <input type="text" name="primaryHover" value="{{.Skin.PrimaryHover}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>成功色</label>
-                                <input type="text" name="successColor" value="{{.Skin.SuccessColor}}" required>
+                                <input type="text" name="successColor" value="{{.Skin.SuccessColor}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>文本主色</label>
-                                <input type="text" name="textPrimary" value="{{.Skin.TextPrimary}}" required>
+                                <input type="text" name="textPrimary" value="{{.Skin.TextPrimary}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>文本次色</label>
-                                <input type="text" name="textSecondary" value="{{.Skin.TextSecondary}}" required>
+                                <input type="text" name="textSecondary" value="{{.Skin.TextSecondary}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>文本弱化色</label>
-                                <input type="text" name="textMuted" value="{{.Skin.TextMuted}}" required>
+                                <input type="text" name="textMuted" value="{{.Skin.TextMuted}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>页面背景</label>
-                                <input type="text" name="bgPrimary" value="{{.Skin.BgPrimary}}" required>
+                                <input type="text" name="bgPrimary" value="{{.Skin.BgPrimary}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>次级背景</label>
-                                <input type="text" name="bgSecondary" value="{{.Skin.BgSecondary}}" required>
+                                <input type="text" name="bgSecondary" value="{{.Skin.BgSecondary}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>强调背景</label>
-                                <input type="text" name="bgAccent" value="{{.Skin.BgAccent}}" required>
+                                <input type="text" name="bgAccent" value="{{.Skin.BgAccent}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>边框颜色</label>
-                                <input type="text" name="borderLight" value="{{.Skin.BorderLight}}" required>
+                                <input type="text" name="borderLight" value="{{.Skin.BorderLight}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>顶栏背景</label>
-                                <input type="text" name="headerBg" value="{{.Skin.HeaderBg}}" required>
+                                <input type="text" name="headerBg" value="{{.Skin.HeaderBg}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>按钮悬停背景</label>
-                                <input type="text" name="themeBtnHoverBg" value="{{.Skin.ThemeBtnHoverBg}}" required>
+                                <input type="text" name="themeBtnHoverBg" value="{{.Skin.ThemeBtnHoverBg}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group full-width">
                                 <label>按钮激活背景</label>
-                                <input type="text" name="themeBtnActiveBg" value="{{.Skin.ThemeBtnActiveBg}}" required>
+                                <input type="text" name="themeBtnActiveBg" value="{{.Skin.ThemeBtnActiveBg}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>基础圆角</label>
-                                <input type="text" name="radius" value="{{.Skin.Radius}}" required>
+                                <input type="text" name="radius" value="{{.Skin.Radius}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>页面宽度</label>
-                                <input type="text" name="layoutContainerMax" value="{{.Skin.LayoutContainerMax}}" required>
+                                <input type="text" name="layoutContainerMax" value="{{.Skin.LayoutContainerMax}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>页面内边距</label>
-                                <input type="text" name="layoutContainerPad" value="{{.Skin.LayoutContainerPad}}" required>
+                                <input type="text" name="layoutContainerPad" value="{{.Skin.LayoutContainerPad}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>列间距</label>
-                                <input type="text" name="layoutColumnGap" value="{{.Skin.LayoutColumnGap}}" required>
+                                <input type="text" name="layoutColumnGap" value="{{.Skin.LayoutColumnGap}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>页面上下留白</label>
-                                <input type="text" name="layoutPagePadding" value="{{.Skin.LayoutPagePadding}}" required>
+                                <input type="text" name="layoutPagePadding" value="{{.Skin.LayoutPagePadding}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group">
                                 <label>文章卡片内边距</label>
-                                <input type="text" name="layoutPostPadding" value="{{.Skin.LayoutPostPadding}}" required>
+                                <input type="text" name="layoutPostPadding" value="{{.Skin.LayoutPostPadding}}" required form="skinSettingsForm">
                             </div>
                             <div class="form-group full-width">
                                 <label>侧边栏卡片内边距</label>
-                                <input type="text" name="layoutWidgetPadding" value="{{.Skin.LayoutWidgetPadding}}" required>
+                                <input type="text" name="layoutWidgetPadding" value="{{.Skin.LayoutWidgetPadding}}" required form="skinSettingsForm">
                             </div>
+                        </div>
+                        <div style="display: flex; justify-content: center; margin-top: 28px;">
+                            <button type="submit" class="btn-submit" form="skinSettingsForm">
+                                <i class="fas fa-save" style="margin-right: 8px; font-size: 0.9em; opacity: 0.9;"></i> 保存皮肤设置
+                            </button>
                         </div>
                     </div>
                 </div>
-                {{end}}
-
-                {{if ne .ActiveSection "skin"}}
-                <!-- 访问防护 -->
-                <div class="settings-section" data-settings-panel="shield" role="tabpanel">
-                    <div class="section-header" style="padding-top: 12px; padding-bottom: 12px;">
-                        <i class="fas fa-cloud"></i>
-                        <h3>访问防护（Cloudflare 五秒盾）</h3>
-                    </div>
-                    <div class="section-body" style="padding-top: 8px;">
-                        <div style="margin-bottom: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid {{if .CfEnvConnected}}#bbf7d0{{else}}#fecaca{{end}}; background: {{if .CfEnvConnected}}#f0fdf4{{else}}#fef2f2{{end}}; color: {{if .CfEnvConnected}}#166534{{else}}#991b1b{{end}}; font-size: 12px;">
-                            <i class="fas {{if .CfEnvConnected}}fa-check-circle{{else}}fa-exclamation-circle{{end}}" style="margin-right: 6px;"></i>{{.CfEnvStatus}}
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>流量阈值 (次/分钟)</label>
-                                <span class="label-desc">超过该值自动开启，默认 1000。</span>
-                                <input type="number" name="cfRequestLimitPerMinute" value="{{.CfRequestLimitPerMinute}}"
-                                    min="1" required>
-                            </div>
-                            <div class="form-group">
-                                <label>恢复等级</label>
-                                <span class="label-desc">自动关闭后恢复到该等级。</span>
-                                <select name="cfRestoreSecurityLevel" required>
-                                    <option value="medium" {{if eq .CfRestoreSecurityLevel "medium"}}selected{{end}}>medium</option>
-                                    <option value="low" {{if eq .CfRestoreSecurityLevel "low"}}selected{{end}}>low</option>
-                                    <option value="high" {{if eq .CfRestoreSecurityLevel "high"}}selected{{end}}>high</option>
-                                    <option value="essentially_off" {{if eq .CfRestoreSecurityLevel "essentially_off"}}selected{{end}}>essentially_off</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>自动关闭时间 (分钟)</label>
-                                <span class="label-desc">默认 30 分钟。</span>
-                                <input type="number" name="cfShieldAutoDisableMinutes" value="{{.CfShieldAutoDisableMinutes}}"
-                                    min="1" required>
-                            </div>
-                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
-                                <label>自动拉黑高频 IP</label>
-                                <span class="label-desc">触发后拉黑命中 >= max(阈值/10, 30) 的前 10 个 IP。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="cfShieldAutoBlockIP" value="1" {{if eq .CfShieldAutoBlockIP "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label>Cloudflare API Token</label>
-                                <span class="label-desc">Token 或 Global API Key。</span>
-                                <input type="text" name="cfApiToken" value="{{.CfApiToken}}" placeholder="token...">
-                            </div>
-                            <div class="form-group">
-                                <label>Cloudflare Email (可选)</label>
-                                <span class="label-desc">用于 Email + Key 认证。</span>
-                                <input type="text" name="cfAuthEmail" value="{{.CfAuthEmail}}" placeholder="you@example.com">
-                            </div>
-                            <div class="form-group">
-                                <label>Cloudflare Zone ID</label>
-                                <span class="label-desc">在 Cloudflare 后台概述页右下角可查询。</span>
-                                <input type="text" name="cfZoneID" value="{{.CfZoneID}}" placeholder="zone id...">
-                            </div>
-                            <div class="form-group full-width">
-                                <label>Cloudflare 连通性检测</label>
-                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用当前表单参数测试 Cloudflare 配置是否可调用。{{end}}</span>
-                                <button type="button" class="btn-secondary" id="cfTestBtn" {{if eq .UserGroup "visitor"}}disabled{{end}}>
-                                    <i class="fas fa-cloud" style="margin-right: 8px;"></i>检测
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-
 
                 <!-- 评论过滤与限制 -->
                 <div class="settings-section" data-settings-panel="comments" role="tabpanel">
@@ -984,6 +913,73 @@
                     </div>
                 </div>
 
+                <!-- 访问防护 -->
+                <div class="settings-section" data-settings-panel="shield" role="tabpanel">
+                    <div class="section-header" style="padding-top: 12px; padding-bottom: 12px;">
+                        <i class="fas fa-cloud"></i>
+                        <h3>访问防护（Cloudflare 五秒盾）</h3>
+                    </div>
+                    <div class="section-body" style="padding-top: 8px;">
+                        <div style="margin-bottom: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid {{if .CfEnvConnected}}#bbf7d0{{else}}#fecaca{{end}}; background: {{if .CfEnvConnected}}#f0fdf4{{else}}#fef2f2{{end}}; color: {{if .CfEnvConnected}}#166534{{else}}#991b1b{{end}}; font-size: 12px;">
+                            <i class="fas {{if .CfEnvConnected}}fa-check-circle{{else}}fa-exclamation-circle{{end}}" style="margin-right: 6px;"></i>{{.CfEnvStatus}}
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>流量阈值 (次/分钟)</label>
+                                <span class="label-desc">超过该值自动开启，默认 1000。</span>
+                                <input type="number" name="cfRequestLimitPerMinute" value="{{.CfRequestLimitPerMinute}}"
+                                    min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>恢复等级</label>
+                                <span class="label-desc">自动关闭后恢复到该等级。</span>
+                                <select name="cfRestoreSecurityLevel" required>
+                                    <option value="medium" {{if eq .CfRestoreSecurityLevel "medium"}}selected{{end}}>medium</option>
+                                    <option value="low" {{if eq .CfRestoreSecurityLevel "low"}}selected{{end}}>low</option>
+                                    <option value="high" {{if eq .CfRestoreSecurityLevel "high"}}selected{{end}}>high</option>
+                                    <option value="essentially_off" {{if eq .CfRestoreSecurityLevel "essentially_off"}}selected{{end}}>essentially_off</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>自动关闭时间 (分钟)</label>
+                                <span class="label-desc">默认 30 分钟。</span>
+                                <input type="number" name="cfShieldAutoDisableMinutes" value="{{.CfShieldAutoDisableMinutes}}"
+                                    min="1" required>
+                            </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label>自动拉黑高频 IP</label>
+                                <span class="label-desc">触发后拉黑命中 >= max(阈值/10, 30) 的前 10 个 IP。</span>
+                                <label class="switch">
+                                    <input type="checkbox" name="cfShieldAutoBlockIP" value="1" {{if eq .CfShieldAutoBlockIP "1"}}checked{{end}}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>Cloudflare API Token</label>
+                                <span class="label-desc">Token 或 Global API Key。</span>
+                                <input type="text" name="cfApiToken" value="{{.CfApiToken}}" placeholder="token...">
+                            </div>
+                            <div class="form-group">
+                                <label>Cloudflare Email (可选)</label>
+                                <span class="label-desc">用于 Email + Key 认证。</span>
+                                <input type="text" name="cfAuthEmail" value="{{.CfAuthEmail}}" placeholder="you@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Cloudflare Zone ID</label>
+                                <span class="label-desc">在 Cloudflare 后台概述页右下角可查询。</span>
+                                <input type="text" name="cfZoneID" value="{{.CfZoneID}}" placeholder="zone id...">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Cloudflare 连通性检测</label>
+                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用当前表单参数测试 Cloudflare 配置是否可调用。{{end}}</span>
+                                <button type="button" class="btn-secondary" id="cfTestBtn" {{if eq .UserGroup "visitor"}}disabled{{end}}>
+                                    <i class="fas fa-cloud" style="margin-right: 8px;"></i>检测
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 其它设置 -->
                 <div class="settings-section" data-settings-panel="advanced" role="tabpanel">
                     <div class="section-header">
@@ -1006,15 +1002,8 @@
                         </div>
                     </div>
                 </div>
-
-                {{else}}
-                <div style="display: flex; justify-content: center; margin-top: 40px;">
-                    <button type="submit" class="btn-submit">
-                        <i class="fas fa-save" style="margin-right: 8px; font-size: 0.9em; opacity: 0.9;"></i> 保存皮肤设置
-                    </button>
-                </div>
-                {{end}}
             </form>
+            <form action="{{adminPath}}/settings/skin" method="POST" id="skinSettingsForm"></form>
         </div>
     </div>
 
@@ -1071,11 +1060,13 @@
                 }, true);
             });
 
-            let initialTab = 'basic';
-            try {
-                initialTab = window.localStorage.getItem(storageKey) || initialTab;
-            } catch (error) {
-                initialTab = 'basic';
+            let initialTab = '{{if eq .ActiveSection "skin"}}skin{{else}}basic{{end}}';
+            if (initialTab !== 'skin') {
+                try {
+                    initialTab = window.localStorage.getItem(storageKey) || initialTab;
+                } catch (error) {
+                    initialTab = 'basic';
+                }
             }
             activateTab(initialTab);
         })();
