@@ -185,11 +185,24 @@
             margin: 0 0 15px;
             padding: 12px 13px;
             border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .login-alert.is-error {
             background: #fff1f2;
             border: 1px solid #ffe4e6;
             color: #be123c;
-            font-size: 13px;
-            line-height: 1.5;
+        }
+
+        .login-alert.is-info {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1d4ed8;
+        }
+
+        .two-factor-hint {
+            margin-top: -2px;
         }
 
         .passkey-copy {
@@ -226,12 +239,13 @@
         </div>
 
         <div class="login-panel active" id="passwordPanel" role="tabpanel" aria-labelledby="passwordTab">
-            <div class="login-alert" id="passwordAlert"></div>
+            <div class="login-alert{{if .ErrorMessage}} is-error{{end}}" id="passwordAlert"{{if .ErrorMessage}} style="display: block;"{{end}}>{{.ErrorMessage}}</div>
             <form method="POST" id="loginForm">
-                <input type="text" name="username" placeholder="用户名" required>
+                <input type="text" name="username" placeholder="用户名" value="{{.Username}}" required>
                 <input type="password" name="password" placeholder="密码" required>
-                <input type="text" name="totp_code" id="twoFactorCode" inputmode="numeric" pattern="[0-9]*"
-                    autocomplete="one-time-code" placeholder="Google 验证码">
+                <div class="login-alert is-info two-factor-hint" id="twoFactorHint"{{if .InfoMessage}} style="display: block;"{{end}}>{{.InfoMessage}}</div>
+                <input type="text" name="totp_code" id="twoFactorCode" class="{{if .TwoFactorRequired}}active{{end}}" inputmode="numeric" pattern="[0-9]*"
+                    autocomplete="one-time-code" placeholder="Google 验证码"{{if .TwoFactorRequired}} required{{end}}>
                 <button type="submit" id="loginButton">登录</button>
             </form>
         </div>
@@ -284,6 +298,18 @@
             return fallback;
         }
 
+        function showAlert(alertBox, message, type) {
+            alertBox.textContent = message;
+            alertBox.classList.remove('is-error', 'is-info');
+            alertBox.classList.add(type === 'info' ? 'is-info' : 'is-error');
+            alertBox.style.display = 'block';
+        }
+
+        function hideAlert(alertBox) {
+            alertBox.style.display = 'none';
+            alertBox.classList.remove('is-error', 'is-info');
+        }
+
         async function finishPasskeyLogin(options, challenge) {
             if (!window.PublicKeyCredential) {
                 throw new Error('当前浏览器不支持通行密钥。');
@@ -327,8 +353,10 @@
             const form = event.currentTarget;
             const button = document.getElementById('loginButton');
             const alertBox = document.getElementById('passwordAlert');
+            const twoFactorHint = document.getElementById('twoFactorHint');
             const twoFactorCode = document.getElementById('twoFactorCode');
-            alertBox.style.display = 'none';
+            hideAlert(alertBox);
+            hideAlert(twoFactorHint);
             button.disabled = true;
             button.textContent = '正在验证...';
             try {
@@ -349,12 +377,14 @@
                     twoFactorCode.classList.add('active');
                     twoFactorCode.required = true;
                     twoFactorCode.focus();
-                    throw new Error(loginData.message || '请输入 Google 验证码。');
+                    showAlert(twoFactorHint, loginData.message || '请输入 Google 验证码。', 'info');
+                    button.disabled = false;
+                    button.textContent = '登录';
+                    return;
                 }
                 throw new Error(loginData.message || '登录失败，请重新输入。');
             } catch (error) {
-                alertBox.textContent = error.message || '登录失败，请重新输入。';
-                alertBox.style.display = 'block';
+                showAlert(alertBox, error.message || '登录失败，请重新输入。', 'error');
                 button.disabled = false;
                 button.textContent = '登录';
             }
@@ -371,6 +401,7 @@
                 document.getElementById('passwordPanel').classList.toggle('active', target === 'password');
                 document.getElementById('passkeyPanel').classList.toggle('active', target === 'passkey');
                 document.getElementById('passwordAlert').style.display = 'none';
+                document.getElementById('twoFactorHint').style.display = 'none';
                 document.getElementById('passkeyAlert').style.display = 'none';
             });
         });
@@ -396,8 +427,7 @@
                 }
                 await finishPasskeyLogin(beginData.options, beginData.challenge);
             } catch (error) {
-                alertBox.textContent = getPasskeyErrorMessage(error, '通行密钥登录失败。');
-                alertBox.style.display = 'block';
+                showAlert(alertBox, getPasskeyErrorMessage(error, '通行密钥登录失败。'), 'error');
                 button.disabled = false;
                 button.textContent = originalContent;
             }

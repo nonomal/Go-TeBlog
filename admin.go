@@ -910,10 +910,11 @@ func main() {
 					})
 					return
 				}
-				c.HTML(http.StatusUnauthorized, "admin_error.html", gin.H{
-					"AdminPath":    adminPath,
-					"ErrorTitle":   "登录失败",
-					"ErrorMessage": "请输入 Google 验证器中的 6 位验证码。",
+				c.HTML(http.StatusUnauthorized, "admin_login.html", gin.H{
+					"AdminPath":          adminPath,
+					"Username":           username,
+					"InfoMessage":        "请输入 Google 验证器中的 6 位验证码。",
+					"TwoFactorRequired":  true,
 				})
 				return
 			}
