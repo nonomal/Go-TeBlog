@@ -55,6 +55,7 @@ var (
 	skinColorPattern      = regexp.MustCompile(`(?i)^(#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([0-9.,%\s/+-]+\)|hsla?\([0-9.,%\s/+-]+\)|transparent|inherit|initial|unset|currentColor|[a-z]+)$`)
 	skinLengthPattern     = regexp.MustCompile(`(?i)^(0|[0-9]+(?:\.[0-9]+)?)(px|rem|em|vw|vh|%)?$`)
 	adminAttachmentRe     = regexp.MustCompile(`(src|href)="https?://[^/]+(/[^"]+)"`)
+	backupTimePattern     = regexp.MustCompile(`^\d{2}:\d{2}$`)
 )
 
 type backupEntry struct {
@@ -74,6 +75,16 @@ type backupStorageConfig struct {
 	SecretKey      string
 	Prefix         string
 	ForcePathStyle bool
+}
+
+type backupScheduleConfig struct {
+	Enabled         bool
+	DailyTime       string
+	RetentionCount  int
+	Weekdays        []int
+	WeekdayLabels   string
+	LastRunDate     string
+	LastAttemptDate string
 }
 
 type s3ListBucketResult struct {
@@ -224,6 +235,237 @@ func (cfg backupStorageConfig) Summary() string {
 		return "S3 配置未填写完整，当前仍保存到服务器本地 backups/ 目录"
 	}
 	return "当前默认保存到服务器本地 backups/ 目录"
+}
+
+func getGoOnlyOption(db *sql.DB, name string, defaultValue string) string {
+	var val string
+	err := db.QueryRow("SELECT value FROM go_options WHERE name=?", name).Scan(&val)
+	if err == nil {
+		return val
+	}
+	return defaultValue
+}
+
+func getGoOnlyOptionInt(db *sql.DB, name string, defaultValue int) int {
+	val := strings.TrimSpace(getGoOnlyOption(db, name, ""))
+	if val == "" {
+		return defaultValue
+	}
+	i, err := strconv.Atoi(val)
+	if err != nil {
+		return defaultValue
+	}
+	return i
+}
+
+func setGoOnlyOption(db *sql.DB, name string, value string) {
+	_, err := db.Exec("INSERT INTO go_options (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value=excluded.value", name, value)
+	if err != nil {
+		log.Printf("Error setting go-only option %s: %v", name, err)
+	}
+}
+
+func normalizeBackupScheduleTime(value string) string {
+	value = strings.TrimSpace(value)
+	if !backupTimePattern.MatchString(value) {
+		return "03:00"
+	}
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return "03:00"
+	}
+	return parsed.Format("15:04")
+}
+
+func isValidBackupScheduleTime(value string) bool {
+	return normalizeBackupScheduleTime(value) == strings.TrimSpace(value)
+}
+
+func buildTimeSelectOptions(start, end int, selected string) []map[string]interface{} {
+	options := make([]map[string]interface{}, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		value := fmt.Sprintf("%02d", i)
+		options = append(options, map[string]interface{}{
+			"Value":    value,
+			"Label":    value,
+			"Selected": value == selected,
+		})
+	}
+	return options
+}
+
+func splitBackupScheduleTime(value string) (string, string) {
+	value = normalizeBackupScheduleTime(value)
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 {
+		return "03", "00"
+	}
+	return parts[0], parts[1]
+}
+
+func normalizeBackupScheduleWeekdays(values []string) []int {
+	allowed := map[int]bool{
+		0: true,
+		1: true,
+		2: true,
+		3: true,
+		4: true,
+		5: true,
+		6: true,
+	}
+	seen := make(map[int]bool)
+	result := make([]int, 0, 7)
+	for _, raw := range values {
+		day, err := strconv.Atoi(strings.TrimSpace(raw))
+		if day == 7 {
+			day = 0
+		}
+		if err != nil || !allowed[day] || seen[day] {
+			continue
+		}
+		seen[day] = true
+		result = append(result, day)
+	}
+	sortBackupScheduleWeekdays(result)
+	if len(result) == 0 {
+		return []int{1, 2, 3, 4, 5, 6, 0}
+	}
+	return result
+}
+
+func backupScheduleWeekdayOptions(selected []int) []map[string]interface{} {
+	contains := func(target int) bool {
+		for _, day := range selected {
+			if day == target {
+				return true
+			}
+		}
+		return false
+	}
+	return []map[string]interface{}{
+		{"Value": 1, "Label": "周一", "Checked": contains(1)},
+		{"Value": 2, "Label": "周二", "Checked": contains(2)},
+		{"Value": 3, "Label": "周三", "Checked": contains(3)},
+		{"Value": 4, "Label": "周四", "Checked": contains(4)},
+		{"Value": 5, "Label": "周五", "Checked": contains(5)},
+		{"Value": 6, "Label": "周六", "Checked": contains(6)},
+		{"Value": 0, "Label": "周日", "Checked": contains(0)},
+	}
+}
+
+func formatBackupScheduleWeekdays(days []int) string {
+	labelMap := map[int]string{
+		0: "周日",
+		1: "周一",
+		2: "周二",
+		3: "周三",
+		4: "周四",
+		5: "周五",
+		6: "周六",
+	}
+	parts := make([]string, 0, len(days))
+	for _, day := range days {
+		if label, ok := labelMap[day]; ok {
+			parts = append(parts, label)
+		}
+	}
+	if len(parts) == 0 {
+		return "周一至周日"
+	}
+	if len(parts) == 7 {
+		return "周一至周日"
+	}
+	return strings.Join(parts, "、")
+}
+
+func sortBackupScheduleWeekdays(days []int) {
+	order := map[int]int{
+		1: 1,
+		2: 2,
+		3: 3,
+		4: 4,
+		5: 5,
+		6: 6,
+		0: 7,
+	}
+	sort.Slice(days, func(i, j int) bool {
+		return order[days[i]] < order[days[j]]
+	})
+}
+
+func weekdayToScheduleValue(day time.Weekday) int {
+	return int(day)
+}
+
+func containsBackupScheduleWeekday(days []int, target int) bool {
+	for _, day := range days {
+		if day == target {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeBackupScheduleLastRun(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	for _, layout := range []string{
+		"2006-01-02 15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+		time.RFC3339,
+	} {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			if layout == "2006-01-02" {
+				return parsed.Format("2006-01-02 00:00")
+			}
+			return parsed.Format("2006-01-02 15:04")
+		}
+	}
+
+	return value
+}
+
+func getBackupScheduleConfig(db *sql.DB) backupScheduleConfig {
+	retentionCount := getGoOnlyOptionInt(db, "backupScheduleRetentionCount", 7)
+	if retentionCount < 1 {
+		retentionCount = 7
+	}
+	if retentionCount > 365 {
+		retentionCount = 365
+	}
+
+	lastRunDate := strings.TrimSpace(getGoOnlyOption(db, "backupScheduleLastRunDate", ""))
+	lastRunDate = normalizeBackupScheduleLastRun(lastRunDate)
+
+	lastAttemptDate := strings.TrimSpace(getGoOnlyOption(db, "backupScheduleLastAttemptDate", ""))
+	if lastAttemptDate != "" {
+		if _, err := time.Parse("2006-01-02", lastAttemptDate); err != nil {
+			lastAttemptDate = ""
+		}
+	}
+
+	weekdayValues := normalizeBackupScheduleWeekdays(strings.Split(getGoOnlyOption(db, "backupScheduleWeekdays", ""), ","))
+
+	return backupScheduleConfig{
+		Enabled:         getGoOnlyOption(db, "backupScheduleEnabled", "0") == "1",
+		DailyTime:       normalizeBackupScheduleTime(getGoOnlyOption(db, "backupScheduleTime", "03:00")),
+		RetentionCount:  retentionCount,
+		Weekdays:        weekdayValues,
+		WeekdayLabels:   formatBackupScheduleWeekdays(weekdayValues),
+		LastRunDate:     lastRunDate,
+		LastAttemptDate: lastAttemptDate,
+	}
+}
+
+func (cfg backupScheduleConfig) Summary() string {
+	if !cfg.Enabled {
+		return "未开启定时备份，当前仍可按需手动创建备份。"
+	}
+	return fmt.Sprintf("已开启，在 %s 的 %s 自动备份，保留最近 %d 个备份文件。", cfg.WeekdayLabels, cfg.DailyTime, cfg.RetentionCount)
 }
 
 func formatBackupSize(size int64) string {
@@ -634,6 +876,223 @@ func setBackupResult(message string, isErr bool) {
 	backupLastResult = message
 	backupLastResultIsErr = isErr
 	backupMutex.Unlock()
+}
+
+func sortBackupEntriesByTimeDesc(backups []backupEntry) {
+	sort.Slice(backups, func(i, j int) bool {
+		if backups[i].RawTime.Equal(backups[j].RawTime) {
+			return backups[i].Name > backups[j].Name
+		}
+		return backups[i].RawTime.After(backups[j].RawTime)
+	})
+}
+
+func pruneLocalBackups(keepCount int) (int, error) {
+	if keepCount < 1 {
+		return 0, nil
+	}
+
+	backups, err := listLocalBackupEntries()
+	if err != nil {
+		return 0, err
+	}
+	if len(backups) <= keepCount {
+		return 0, nil
+	}
+
+	sortBackupEntriesByTimeDesc(backups)
+	removed := 0
+	for _, item := range backups[keepCount:] {
+		if err := os.Remove(filepath.Join("backups", item.Name)); err != nil && !os.IsNotExist(err) {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
+}
+
+func pruneS3Backups(cfg backupStorageConfig, keepCount int) (int, error) {
+	if keepCount < 1 {
+		return 0, nil
+	}
+
+	backups, err := listS3BackupEntries(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if len(backups) <= keepCount {
+		return 0, nil
+	}
+
+	sortBackupEntriesByTimeDesc(backups)
+	removed := 0
+	for _, item := range backups[keepCount:] {
+		if err := deleteBackupFromS3(cfg, item.Name); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
+}
+
+func createBackupArchive(db *sql.DB) (string, string, error) {
+	if err := os.MkdirAll("backups", 0755); err != nil {
+		return "", "", err
+	}
+
+	filename := fmt.Sprintf("backup_%s.tar.gz", time.Now().Format("20060102_150405"))
+	targetPath := filepath.Join("backups", filename)
+
+	// 确保 WAL 日志中的数据全部合并到主数据库文件，保证备份完整性
+	db.Exec("PRAGMA wal_checkpoint(FULL)")
+
+	cmd := exec.Command("tar", "-czf", targetPath, "blog.sqlite", "usr")
+	if err := cmd.Run(); err != nil {
+		return "", "", err
+	}
+
+	return targetPath, filename, nil
+}
+
+func runBackupJob(db *sql.DB, trigger string) error {
+	backupMutex.Lock()
+	if isBackingUp {
+		backupMutex.Unlock()
+		return fmt.Errorf("备份任务正在进行中")
+	}
+	isBackingUp = true
+	backupLastResult = ""
+	backupLastResultIsErr = false
+	backupMutex.Unlock()
+
+	if trigger == "scheduled" {
+		setGoOnlyOption(db, "backupScheduleLastAttemptDate", time.Now().Format("2006-01-02"))
+	}
+
+	go func() {
+		defer func() {
+			backupMutex.Lock()
+			isBackingUp = false
+			backupMutex.Unlock()
+		}()
+
+		targetPath, filename, err := createBackupArchive(db)
+		if err != nil {
+			if os.IsPermission(err) {
+				setBackupResult("备份目录创建失败", true)
+			} else {
+				setBackupResult("备份创建失败", true)
+			}
+			log.Printf("Backup job failed during archive creation [%s]: %v", trigger, err)
+			return
+		}
+
+		storageCfg := getBackupStorageConfig(db)
+		resultMessage := "备份任务已完成"
+		resultStorage := "local"
+
+		if storageCfg.Enabled() {
+			if err := uploadBackupToS3(storageCfg, targetPath, filename); err != nil {
+				setBackupResult(fmt.Sprintf("S3 上传失败，备份已保留在本地 backups/%s", filename), true)
+				log.Printf("Backup job upload failed [%s]: %v", trigger, err)
+				return
+			}
+			if err := os.Remove(targetPath); err != nil {
+				setBackupResult(fmt.Sprintf("备份已上传到 S3，但本地文件清理失败：backups/%s", filename), false)
+				log.Printf("Backup job cleanup failed [%s]: %v", trigger, err)
+				return
+			}
+			resultStorage = "s3"
+			resultMessage = fmt.Sprintf("备份已上传到 S3 存储桶 %s", storageCfg.Bucket)
+			log.Printf("Backup job uploaded to S3 [%s]: %s", trigger, storageCfg.ObjectKey(filename))
+		} else if storageCfg.HasAnyValue() {
+			resultMessage = "S3 配置未填写完整，备份已保存到本地 backups/ 目录"
+			log.Printf("Backup job created locally with incomplete S3 config [%s]: %s", trigger, targetPath)
+		} else {
+			log.Printf("Backup job created locally [%s]: %s", trigger, targetPath)
+		}
+
+		if trigger == "scheduled" {
+			scheduleCfg := getBackupScheduleConfig(db)
+			retentionMessage := ""
+			if scheduleCfg.Enabled {
+				var removed int
+				if resultStorage == "s3" {
+					removed, err = pruneS3Backups(storageCfg, scheduleCfg.RetentionCount)
+				} else {
+					removed, err = pruneLocalBackups(scheduleCfg.RetentionCount)
+				}
+				if err != nil {
+					setGoOnlyOption(db, "backupScheduleLastRunDate", time.Now().Format("2006-01-02 15:04"))
+					setBackupResult("每日定时备份已完成，但旧备份清理失败。", true)
+					log.Printf("Scheduled backup retention failed: %v", err)
+					return
+				}
+				if removed > 0 {
+					retentionMessage = fmt.Sprintf("，并清理了 %d 个旧备份", removed)
+				}
+			}
+
+			setGoOnlyOption(db, "backupScheduleLastRunDate", time.Now().Format("2006-01-02 15:04"))
+			if resultStorage == "s3" {
+				setBackupResult(fmt.Sprintf("每日定时备份已上传到 S3 存储桶 %s%s", storageCfg.Bucket, retentionMessage), false)
+			} else if resultMessage != "备份任务已完成" {
+				setBackupResult("每日定时备份已完成，"+resultMessage+retentionMessage, false)
+			} else {
+				setBackupResult("每日定时备份已完成"+retentionMessage, false)
+			}
+			return
+		}
+
+		setBackupResult(resultMessage, false)
+	}()
+
+	return nil
+}
+
+func checkAndRunScheduledBackup(db *sql.DB) {
+	cfg := getBackupScheduleConfig(db)
+	if !cfg.Enabled {
+		return
+	}
+
+	today := time.Now().Format("2006-01-02")
+	if cfg.LastAttemptDate == today {
+		return
+	}
+
+	parsed, err := time.Parse("15:04", cfg.DailyTime)
+	if err != nil {
+		return
+	}
+
+	now := time.Now()
+	if !containsBackupScheduleWeekday(cfg.Weekdays, weekdayToScheduleValue(now.Weekday())) {
+		return
+	}
+	scheduledAt := time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, now.Location())
+	if now.Before(scheduledAt) {
+		return
+	}
+
+	if err := runBackupJob(db, "scheduled"); err != nil {
+		if err.Error() != "备份任务正在进行中" {
+			log.Printf("Scheduled backup start failed: %v", err)
+		}
+	}
+}
+
+func startBackupScheduleWorker(db *sql.DB) {
+	checkAndRunScheduledBackup(db)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		checkAndRunScheduledBackup(db)
+	}
 }
 
 func getBackupStorageUsageMB(db *sql.DB) float64 {
@@ -1283,6 +1742,7 @@ func main() {
 	}
 
 	applyConfiguredTimezone(db)
+	go startBackupScheduleWorker(db)
 
 	adminPath := getOption(db, "adminPath", "admin")
 	if !strings.HasPrefix(adminPath, "/") {
@@ -3621,14 +4081,14 @@ func main() {
 		username, _ := c.Get("username")
 		adminPath, _ := c.Get("adminPath")
 		storageCfg := getBackupStorageConfig(db)
+		scheduleCfg := getBackupScheduleConfig(db)
+		scheduleHour, scheduleMinute := splitBackupScheduleTime(scheduleCfg.DailyTime)
 
 		localBackups, localErr := listLocalBackupEntries()
 		remoteBackups, remoteErr := listS3BackupEntries(storageCfg)
 		backups := append(localBackups, remoteBackups...)
 
-		sort.Slice(backups, func(i, j int) bool {
-			return backups[i].RawTime.After(backups[j].RawTime)
-		})
+		sortBackupEntriesByTimeDesc(backups)
 
 		backupMutex.Lock()
 		running := isBackingUp
@@ -3636,6 +4096,7 @@ func main() {
 		lastResultIsErr := backupLastResultIsErr
 		backupMutex.Unlock()
 
+		consumeLastResult := false
 		if successMsg == "" && errorMsg == "" {
 			switch c.Query("msg") {
 			case "created":
@@ -3647,6 +4108,7 @@ func main() {
 					} else {
 						successMsg = lastResult
 					}
+					consumeLastResult = true
 				} else {
 					successMsg = "备份任务已完成"
 				}
@@ -3663,8 +4125,18 @@ func main() {
 					} else {
 						successMsg = lastResult
 					}
+					consumeLastResult = true
 				}
 			}
+		}
+
+		if consumeLastResult {
+			backupMutex.Lock()
+			if backupLastResult == lastResult {
+				backupLastResult = ""
+				backupLastResultIsErr = false
+			}
+			backupMutex.Unlock()
 		}
 
 		if localErr != nil {
@@ -3681,17 +4153,29 @@ func main() {
 		}
 
 		c.HTML(http.StatusOK, "admin_backups.html", gin.H{
-			"Username":              username,
-			"Backups":               backups,
-			"Tab":                   "backups",
-			"AdminPath":             adminPath,
-			"SuccessMessage":        successMsg,
-			"ErrorMessage":          errorMsg,
-			"IsBackingUp":           running,
-			"BackupStorageMode":     map[bool]string{true: "S3 兼容存储", false: "本地目录"}[storageCfg.Enabled()],
-			"BackupStorageSummary":  storageCfg.Summary(),
-			"BackupStorageEnabled":  storageCfg.Enabled(),
-			"BackupStorageFallback": storageCfg.Enabled(),
+			"Username":                     username,
+			"Backups":                      backups,
+			"Tab":                          "backups",
+			"AdminPath":                    adminPath,
+			"SuccessMessage":               successMsg,
+			"ErrorMessage":                 errorMsg,
+			"IsBackingUp":                  running,
+			"BackupStorageMode":            map[bool]string{true: "S3 兼容存储", false: "本地目录"}[storageCfg.Enabled()],
+			"BackupStorageSummary":         storageCfg.Summary(),
+			"BackupStorageEnabled":         storageCfg.Enabled(),
+			"BackupStorageFallback":        storageCfg.Enabled(),
+			"BackupScheduleEnabled":        scheduleCfg.Enabled,
+			"BackupScheduleTime":           scheduleCfg.DailyTime,
+			"BackupScheduleHour":           scheduleHour,
+			"BackupScheduleMinute":         scheduleMinute,
+			"BackupScheduleHourOptions":    buildTimeSelectOptions(0, 23, scheduleHour),
+			"BackupScheduleMinuteOptions":  buildTimeSelectOptions(0, 59, scheduleMinute),
+			"BackupScheduleRetentionCount": scheduleCfg.RetentionCount,
+			"BackupScheduleWeekdays":       scheduleCfg.Weekdays,
+			"BackupScheduleWeekdayLabels":  scheduleCfg.WeekdayLabels,
+			"BackupScheduleWeekdayOptions": backupScheduleWeekdayOptions(scheduleCfg.Weekdays),
+			"BackupScheduleLastRunDate":    scheduleCfg.LastRunDate,
+			"BackupScheduleSummary":        scheduleCfg.Summary(),
 		})
 	}
 
@@ -3700,73 +4184,41 @@ func main() {
 	})
 
 	admin.POST("/backups/create", writeProtectMiddleware, func(c *gin.Context) {
-		backupMutex.Lock()
-		if isBackingUp {
-			backupMutex.Unlock()
+		if err := runBackupJob(db, "manual"); err != nil {
 			renderBackupsPage(c, "", "备份任务正在进行中，请在结束后再试。")
 			return
 		}
-		isBackingUp = true
-		backupLastResult = ""
-		backupLastResultIsErr = false
-		backupMutex.Unlock()
-
-		go func() {
-			defer func() {
-				backupMutex.Lock()
-				isBackingUp = false
-				backupMutex.Unlock()
-			}()
-
-			if err := os.MkdirAll("backups", 0755); err != nil {
-				setBackupResult("备份目录创建失败", true)
-				log.Printf("Background backup failed to create directory: %v", err)
-				return
-			}
-
-			filename := fmt.Sprintf("backup_%s.tar.gz", time.Now().Format("20060102_150405"))
-			targetPath := filepath.Join("backups", filename)
-
-			// 确保 WAL 日志中的数据全部合并到主数据库文件，保证备份完整性
-			db.Exec("PRAGMA wal_checkpoint(FULL)")
-
-			// Create backup using tar command
-			// 使用 sh -c 来让 tar 支持通配符，或者明确列出文件
-			cmd := exec.Command("tar", "-czf", targetPath, "blog.sqlite", "usr")
-			// 如果你想把 wal/shm 也带上也可以，但 checkpoint 后 blog.sqlite 已经是完整的了
-			err := cmd.Run()
-			if err != nil {
-				setBackupResult("备份创建失败", true)
-				log.Printf("Background backup failed: %v", err)
-				return
-			}
-
-			storageCfg := getBackupStorageConfig(db)
-			if storageCfg.Enabled() {
-				if err := uploadBackupToS3(storageCfg, targetPath, filename); err != nil {
-					setBackupResult(fmt.Sprintf("S3 上传失败，备份已保留在本地 backups/%s", filename), true)
-					log.Printf("Background backup uploaded failed: %v", err)
-					return
-				}
-				if err := os.Remove(targetPath); err != nil {
-					setBackupResult(fmt.Sprintf("备份已上传到 S3，但本地文件清理失败：backups/%s", filename), false)
-					log.Printf("Background backup cleanup failed: %v", err)
-					return
-				}
-				setBackupResult(fmt.Sprintf("备份已上传到 S3 存储桶 %s", storageCfg.Bucket), false)
-				log.Printf("Background backup uploaded to S3: %s", storageCfg.ObjectKey(filename))
-				return
-			}
-
-			if storageCfg.HasAnyValue() {
-				setBackupResult("S3 配置未填写完整，备份已保存到本地 backups/ 目录", false)
-			} else {
-				setBackupResult("备份任务已完成", false)
-			}
-			log.Printf("Background backup created: %s", targetPath)
-		}()
-
 		c.Redirect(http.StatusFound, adminPath+"/backups?msg=created")
+	})
+
+	admin.POST("/backups/schedule", writeProtectMiddleware, func(c *gin.Context) {
+		enabled := c.DefaultPostForm("backupScheduleEnabled", "0") == "1"
+		rawHour := strings.TrimSpace(c.PostForm("backupScheduleHour"))
+		rawMinute := strings.TrimSpace(c.PostForm("backupScheduleMinute"))
+		rawDailyTime := fmt.Sprintf("%s:%s", rawHour, rawMinute)
+		if !isValidBackupScheduleTime(rawDailyTime) {
+			renderBackupsPage(c, "", "每日备份时间格式无效，请按 24 小时制填写。")
+			return
+		}
+		dailyTime := normalizeBackupScheduleTime(rawDailyTime)
+		retentionRaw := strings.TrimSpace(c.PostForm("backupScheduleRetentionCount"))
+		retentionCount, err := strconv.Atoi(retentionRaw)
+		if err != nil || retentionCount < 1 || retentionCount > 365 {
+			renderBackupsPage(c, "", "保留备份个数必须填写 1 到 365 之间的整数。")
+			return
+		}
+		weekdays := normalizeBackupScheduleWeekdays(c.PostFormArray("backupScheduleWeekdays"))
+
+		setGoOnlyOption(db, "backupScheduleEnabled", map[bool]string{true: "1", false: "0"}[enabled])
+		setGoOnlyOption(db, "backupScheduleTime", dailyTime)
+		setGoOnlyOption(db, "backupScheduleRetentionCount", strconv.Itoa(retentionCount))
+		weekdayTexts := make([]string, 0, len(weekdays))
+		for _, day := range weekdays {
+			weekdayTexts = append(weekdayTexts, strconv.Itoa(day))
+		}
+		setGoOnlyOption(db, "backupScheduleWeekdays", strings.Join(weekdayTexts, ","))
+
+		renderBackupsPage(c, "定时备份设置已保存", "")
 	})
 
 	admin.POST("/backups/delete/:filename", writeProtectMiddleware, func(c *gin.Context) {
