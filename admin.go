@@ -6,11 +6,14 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"html/template"
@@ -43,14 +46,50 @@ import (
 )
 
 var (
-	isBackingUp          bool
-	backupMutex          sync.Mutex
-	systemTimeLocation   = time.Local
-	skinThemeNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	skinColorPattern     = regexp.MustCompile(`(?i)^(#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([0-9.,%\s/+-]+\)|hsla?\([0-9.,%\s/+-]+\)|transparent|inherit|initial|unset|currentColor|[a-z]+)$`)
-	skinLengthPattern    = regexp.MustCompile(`(?i)^(0|[0-9]+(?:\.[0-9]+)?)(px|rem|em|vw|vh|%)?$`)
-	adminAttachmentRe    = regexp.MustCompile(`(src|href)="https?://[^/]+(/[^"]+)"`)
+	isBackingUp           bool
+	backupMutex           sync.Mutex
+	backupLastResult      string
+	backupLastResultIsErr bool
+	systemTimeLocation    = time.Local
+	skinThemeNamePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	skinColorPattern      = regexp.MustCompile(`(?i)^(#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([0-9.,%\s/+-]+\)|hsla?\([0-9.,%\s/+-]+\)|transparent|inherit|initial|unset|currentColor|[a-z]+)$`)
+	skinLengthPattern     = regexp.MustCompile(`(?i)^(0|[0-9]+(?:\.[0-9]+)?)(px|rem|em|vw|vh|%)?$`)
+	adminAttachmentRe     = regexp.MustCompile(`(src|href)="https?://[^/]+(/[^"]+)"`)
 )
+
+type backupEntry struct {
+	Name    string
+	Size    string
+	Bytes   int64
+	Time    string
+	RawTime time.Time
+	Storage string
+}
+
+type backupStorageConfig struct {
+	Endpoint       string
+	Region         string
+	Bucket         string
+	AccessKey      string
+	SecretKey      string
+	Prefix         string
+	ForcePathStyle bool
+}
+
+type s3ListBucketResult struct {
+	Contents []struct {
+		Key          string `xml:"Key"`
+		LastModified string `xml:"LastModified"`
+		Size         int64  `xml:"Size"`
+	} `xml:"Contents"`
+	IsTruncated           bool   `xml:"IsTruncated"`
+	NextContinuationToken string `xml:"NextContinuationToken"`
+}
+
+type s3ErrorResult struct {
+	Code    string `xml:"Code"`
+	Message string `xml:"Message"`
+}
 
 func adminFixAttachmentLinks(htmlContent string) string {
 	return adminAttachmentRe.ReplaceAllStringFunc(htmlContent, func(match string) string {
@@ -118,6 +157,493 @@ func adminRenderPostContent(mdRenderer goldmark.Markdown, title, text string) (s
 	}
 
 	return adminPreviewTitle(title) + adminFixAttachmentLinks(buf.String()), nil
+}
+
+func getBackupStorageConfig(db *sql.DB) backupStorageConfig {
+	return backupStorageConfig{
+		Endpoint:       strings.TrimSpace(getOption(db, "backupS3Endpoint", "")),
+		Region:         strings.TrimSpace(getOption(db, "backupS3Region", "")),
+		Bucket:         strings.TrimSpace(getOption(db, "backupS3Bucket", "")),
+		AccessKey:      strings.TrimSpace(getOption(db, "backupS3AccessKey", "")),
+		SecretKey:      strings.TrimSpace(getOption(db, "backupS3SecretKey", "")),
+		Prefix:         strings.TrimSpace(getOption(db, "backupS3Prefix", "")),
+		ForcePathStyle: getOption(db, "backupS3ForcePathStyle", "0") == "1",
+	}
+}
+
+func getBackupStorageDraftConfig(db *sql.DB) backupStorageConfig {
+	activeCfg := getBackupStorageConfig(db)
+	activeForcePathStyle := "0"
+	if activeCfg.ForcePathStyle {
+		activeForcePathStyle = "1"
+	}
+
+	return backupStorageConfig{
+		Endpoint:       strings.TrimSpace(getOption(db, "backupS3DraftEndpoint", activeCfg.Endpoint)),
+		Region:         strings.TrimSpace(getOption(db, "backupS3DraftRegion", activeCfg.Region)),
+		Bucket:         strings.TrimSpace(getOption(db, "backupS3DraftBucket", activeCfg.Bucket)),
+		AccessKey:      strings.TrimSpace(getOption(db, "backupS3DraftAccessKey", activeCfg.AccessKey)),
+		SecretKey:      strings.TrimSpace(getOption(db, "backupS3DraftSecretKey", activeCfg.SecretKey)),
+		Prefix:         strings.TrimSpace(getOption(db, "backupS3DraftPrefix", activeCfg.Prefix)),
+		ForcePathStyle: getOption(db, "backupS3DraftForcePathStyle", activeForcePathStyle) == "1",
+	}
+}
+
+func (cfg backupStorageConfig) Enabled() bool {
+	return cfg.Endpoint != "" && cfg.Region != "" && cfg.Bucket != "" && cfg.AccessKey != "" && cfg.SecretKey != ""
+}
+
+func (cfg backupStorageConfig) HasAnyValue() bool {
+	return cfg.Endpoint != "" || cfg.Region != "" || cfg.Bucket != "" || cfg.AccessKey != "" || cfg.SecretKey != "" || cfg.Prefix != "" || cfg.ForcePathStyle
+}
+
+func (cfg backupStorageConfig) RegionOrDefault() string {
+	return strings.TrimSpace(cfg.Region)
+}
+
+func (cfg backupStorageConfig) NormalizedPrefix() string {
+	return strings.Trim(strings.TrimSpace(cfg.Prefix), "/")
+}
+
+func (cfg backupStorageConfig) ObjectKey(filename string) string {
+	prefix := cfg.NormalizedPrefix()
+	if prefix == "" {
+		return filename
+	}
+	return prefix + "/" + filename
+}
+
+func (cfg backupStorageConfig) Summary() string {
+	if cfg.Enabled() {
+		if prefix := cfg.NormalizedPrefix(); prefix != "" {
+			return fmt.Sprintf("S3 兼容存储：%s / %s（前缀：%s/）", cfg.Endpoint, cfg.Bucket, prefix)
+		}
+		return fmt.Sprintf("S3 兼容存储：%s / %s", cfg.Endpoint, cfg.Bucket)
+	}
+	if cfg.HasAnyValue() {
+		return "S3 配置未填写完整，当前仍保存到服务器本地 backups/ 目录"
+	}
+	return "当前默认保存到服务器本地 backups/ 目录"
+}
+
+func formatBackupSize(size int64) string {
+	return fmt.Sprintf("%.2f MB", float64(size)/(1024*1024))
+}
+
+func listLocalBackupEntries() ([]backupEntry, error) {
+	if err := os.MkdirAll("backups", 0755); err != nil {
+		return nil, err
+	}
+
+	files, err := os.ReadDir("backups")
+	if err != nil {
+		return nil, err
+	}
+
+	backups := make([]backupEntry, 0, len(files))
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".tar.gz") {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil {
+			continue
+		}
+		backups = append(backups, backupEntry{
+			Name:    f.Name(),
+			Size:    formatBackupSize(info.Size()),
+			Bytes:   info.Size(),
+			Time:    info.ModTime().Format("2006-01-02 15:04:05"),
+			RawTime: info.ModTime(),
+			Storage: "本地",
+		})
+	}
+	return backups, nil
+}
+
+func escapeS3Path(path string) string {
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+func awsEncodeQueryComponent(value string) string {
+	encoded := url.QueryEscape(value)
+	encoded = strings.ReplaceAll(encoded, "+", "%20")
+	encoded = strings.ReplaceAll(encoded, "*", "%2A")
+	encoded = strings.ReplaceAll(encoded, "%7E", "~")
+	return encoded
+}
+
+func buildAWSCanonicalQuery(values url.Values) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(values))
+	for _, key := range keys {
+		vals := append([]string(nil), values[key]...)
+		sort.Strings(vals)
+		if len(vals) == 0 {
+			parts = append(parts, awsEncodeQueryComponent(key)+"=")
+			continue
+		}
+		for _, val := range vals {
+			parts = append(parts, awsEncodeQueryComponent(key)+"="+awsEncodeQueryComponent(val))
+		}
+	}
+	return strings.Join(parts, "&")
+}
+
+func sha256HexString(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func sha256HexFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func hmacSHA256Bytes(key []byte, data string) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(data))
+	return mac.Sum(nil)
+}
+
+func buildS3RequestTarget(cfg backupStorageConfig, objectKey string, query url.Values) (string, string, string, string, error) {
+	endpointURL, err := url.Parse(cfg.Endpoint)
+	if err != nil || endpointURL.Scheme == "" || endpointURL.Host == "" {
+		return "", "", "", "", fmt.Errorf("S3 Endpoint 无效")
+	}
+
+	host := endpointURL.Host
+	basePath := strings.TrimSuffix(endpointURL.EscapedPath(), "/")
+	canonicalURI := basePath
+	if cfg.ForcePathStyle {
+		canonicalURI += "/" + url.PathEscape(cfg.Bucket)
+		if objectKey != "" {
+			canonicalURI += "/" + escapeS3Path(objectKey)
+		}
+	} else {
+		host = cfg.Bucket + "." + endpointURL.Host
+		if objectKey != "" {
+			if canonicalURI == "" || canonicalURI == "/" {
+				canonicalURI = "/" + escapeS3Path(objectKey)
+			} else {
+				canonicalURI += "/" + escapeS3Path(objectKey)
+			}
+		}
+	}
+
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
+	if !strings.HasPrefix(canonicalURI, "/") {
+		canonicalURI = "/" + canonicalURI
+	}
+
+	canonicalQuery := buildAWSCanonicalQuery(query)
+	requestURL := endpointURL.Scheme + "://" + host + canonicalURI
+	if canonicalQuery != "" {
+		requestURL += "?" + canonicalQuery
+	}
+
+	return requestURL, host, canonicalURI, canonicalQuery, nil
+}
+
+func newS3SignedRequest(cfg backupStorageConfig, method, objectKey string, query url.Values, payloadHash string, body io.Reader) (*http.Request, error) {
+	if payloadHash == "" {
+		payloadHash = sha256HexString("")
+	}
+
+	requestURL, host, canonicalURI, canonicalQuery, err := buildS3RequestTarget(cfg, objectKey, query)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	shortDate := now.Format("20060102")
+	region := cfg.RegionOrDefault()
+	if region == "" {
+		return nil, fmt.Errorf("S3 Region 未填写")
+	}
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalHeaders := "host:" + host + "\n" +
+		"x-amz-content-sha256:" + payloadHash + "\n" +
+		"x-amz-date:" + amzDate + "\n"
+
+	canonicalRequest := strings.Join([]string{
+		method,
+		canonicalURI,
+		canonicalQuery,
+		canonicalHeaders,
+		signedHeaders,
+		payloadHash,
+	}, "\n")
+
+	credentialScope := shortDate + "/" + region + "/s3/aws4_request"
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credentialScope,
+		sha256HexString(canonicalRequest),
+	}, "\n")
+
+	kDate := hmacSHA256Bytes([]byte("AWS4"+cfg.SecretKey), shortDate)
+	kRegion := hmacSHA256Bytes(kDate, region)
+	kService := hmacSHA256Bytes(kRegion, "s3")
+	kSigning := hmacSHA256Bytes(kService, "aws4_request")
+	signature := hex.EncodeToString(hmacSHA256Bytes(kSigning, stringToSign))
+
+	req, err := http.NewRequest(method, requestURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Host = host
+	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+cfg.AccessKey+"/"+credentialScope+", SignedHeaders="+signedHeaders+", Signature="+signature)
+	if method == http.MethodPut {
+		req.Header.Set("Content-Type", "application/gzip")
+	}
+
+	return req, nil
+}
+
+func readS3Error(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if len(body) > 0 {
+		var apiErr s3ErrorResult
+		if err := xml.Unmarshal(body, &apiErr); err == nil && strings.TrimSpace(apiErr.Message) != "" {
+			return fmt.Errorf("S3 请求失败 (%d): %s", resp.StatusCode, strings.TrimSpace(apiErr.Message))
+		}
+		return fmt.Errorf("S3 请求失败 (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return fmt.Errorf("S3 请求失败 (%d)", resp.StatusCode)
+}
+
+func parseS3ObjectTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000Z", "2006-01-02T15:04:05Z"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.Local()
+		}
+	}
+	return time.Time{}
+}
+
+func listS3BackupEntries(cfg backupStorageConfig) ([]backupEntry, error) {
+	if !cfg.Enabled() {
+		return nil, nil
+	}
+
+	client := &http.Client{Timeout: 90 * time.Second}
+	prefix := cfg.NormalizedPrefix()
+	listPrefix := prefix
+	if listPrefix != "" {
+		listPrefix += "/"
+	}
+
+	var backups []backupEntry
+	var continuation string
+	for {
+		query := url.Values{}
+		query.Set("list-type", "2")
+		if listPrefix != "" {
+			query.Set("prefix", listPrefix)
+		}
+		if continuation != "" {
+			query.Set("continuation-token", continuation)
+		}
+
+		req, err := newS3SignedRequest(cfg, http.MethodGet, "", query, sha256HexString(""), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("S3 列表读取失败: %w", err)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			err = readS3Error(resp)
+			resp.Body.Close()
+			return nil, err
+		}
+
+		var result s3ListBucketResult
+		err = xml.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("S3 列表解析失败")
+		}
+
+		for _, item := range result.Contents {
+			name := strings.TrimPrefix(item.Key, listPrefix)
+			if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".tar.gz") {
+				continue
+			}
+
+			modTime := parseS3ObjectTime(item.LastModified)
+			displayTime := item.LastModified
+			if !modTime.IsZero() {
+				displayTime = modTime.Format("2006-01-02 15:04:05")
+			}
+			backups = append(backups, backupEntry{
+				Name:    name,
+				Size:    formatBackupSize(item.Size),
+				Bytes:   item.Size,
+				Time:    displayTime,
+				RawTime: modTime,
+				Storage: "S3",
+			})
+		}
+
+		if !result.IsTruncated || strings.TrimSpace(result.NextContinuationToken) == "" {
+			break
+		}
+		continuation = strings.TrimSpace(result.NextContinuationToken)
+	}
+
+	return backups, nil
+}
+
+func uploadBackupToS3(cfg backupStorageConfig, localPath, filename string) error {
+	payloadHash, err := sha256HexFile(localPath)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	req, err := newS3SignedRequest(cfg, http.MethodPut, cfg.ObjectKey(filename), nil, payloadHash, file)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = info.Size()
+	req.Header.Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+
+	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+	if err != nil {
+		return fmt.Errorf("S3 上传失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return readS3Error(resp)
+	}
+	return nil
+}
+
+func deleteBackupFromS3(cfg backupStorageConfig, filename string) error {
+	req, err := newS3SignedRequest(cfg, http.MethodDelete, cfg.ObjectKey(filename), nil, sha256HexString(""), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := (&http.Client{Timeout: 90 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("S3 删除失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return readS3Error(resp)
+	}
+	return nil
+}
+
+func testS3Credentials(cfg backupStorageConfig) error {
+	if !cfg.Enabled() {
+		return fmt.Errorf("请先填写完整的 S3 Endpoint、Region、Bucket、Access Key 和 Secret Key。")
+	}
+
+	query := url.Values{}
+	query.Set("list-type", "2")
+	query.Set("max-keys", "1")
+	if prefix := cfg.NormalizedPrefix(); prefix != "" {
+		query.Set("prefix", prefix+"/")
+	}
+
+	req, err := newS3SignedRequest(cfg, http.MethodGet, "", query, sha256HexString(""), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("S3 读取失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return readS3Error(resp)
+	}
+
+	var result s3ListBucketResult
+	if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("S3 返回解析失败")
+	}
+
+	return nil
+}
+
+func setBackupResult(message string, isErr bool) {
+	backupMutex.Lock()
+	backupLastResult = message
+	backupLastResultIsErr = isErr
+	backupMutex.Unlock()
+}
+
+func getBackupStorageUsageMB(db *sql.DB) float64 {
+	localBackups, _ := listLocalBackupEntries()
+	var totalBytes int64
+	for _, item := range localBackups {
+		totalBytes += item.Bytes
+	}
+
+	storageCfg := getBackupStorageConfig(db)
+	remoteBackups, err := listS3BackupEntries(storageCfg)
+	if err == nil {
+		for _, item := range remoteBackups {
+			totalBytes += item.Bytes
+		}
+	}
+
+	return float64(totalBytes) / (1024 * 1024)
 }
 
 type cloudflareAccessLogItem struct {
@@ -911,10 +1437,10 @@ func main() {
 					return
 				}
 				c.HTML(http.StatusUnauthorized, "admin_login.html", gin.H{
-					"AdminPath":          adminPath,
-					"Username":           username,
-					"InfoMessage":        "请输入 Google 验证器中的 6 位验证码。",
-					"TwoFactorRequired":  true,
+					"AdminPath":         adminPath,
+					"Username":          username,
+					"InfoMessage":       "请输入 Google 验证器中的 6 位验证码。",
+					"TwoFactorRequired": true,
 				})
 				return
 			}
@@ -1343,7 +1869,7 @@ func main() {
 			"CPUs":                  runtime.NumCPU(),
 			"TotalMem":              totalMem,
 			"UploadSize":            fmt.Sprintf("%.2f MB", getDirSize("usr/uploads")),
-			"BackupSize":            fmt.Sprintf("%.2f MB", getDirSize("backups")),
+			"BackupSize":            fmt.Sprintf("%.2f MB", getBackupStorageUsageMB(db)),
 			"DiskFree":              diskFree,
 			"SysLoad":               sysLoad,
 			"CfShieldActive":        cfShieldActive,
@@ -1624,6 +2150,14 @@ func main() {
 		cfApiToken := getOption(db, "cfApiToken", "")
 		cfAuthEmail := getOption(db, "cfAuthEmail", "")
 		cfZoneID := getOption(db, "cfZoneID", "")
+		backupStorageCfg := getBackupStorageConfig(db)
+		backupDraftCfg := getBackupStorageDraftConfig(db)
+		backupStorageType := "local"
+		if backupStorageCfg.HasAnyValue() {
+			backupStorageType = "s3"
+		}
+		backupS3AccessKey := backupDraftCfg.AccessKey
+		backupS3SecretKey := backupDraftCfg.SecretKey
 		if group == "visitor" && cfApiToken != "" {
 			cfApiToken = "********************************"
 		}
@@ -1632,6 +2166,12 @@ func main() {
 		}
 		if group == "visitor" && cfZoneID != "" {
 			cfZoneID = "********************************"
+		}
+		if group == "visitor" && backupS3AccessKey != "" {
+			backupS3AccessKey = "********************************"
+		}
+		if group == "visitor" && backupS3SecretKey != "" {
+			backupS3SecretKey = "********************************"
 		}
 		cfEnvConnected := isCloudflareRequest(c)
 		cfEnvStatus := "当前未接入 Cloudflare"
@@ -1686,6 +2226,14 @@ func main() {
 			"CfRestoreSecurityLevel":     getOption(db, "cfRestoreSecurityLevel", "medium"),
 			"CfShieldAutoDisableMinutes": getOption(db, "cfShieldAutoDisableMinutes", "30"),
 			"CfShieldAutoBlockIP":        getOption(db, "cfShieldAutoBlockIP", "0"),
+			"BackupStorageType":          backupStorageType,
+			"BackupS3Endpoint":           backupDraftCfg.Endpoint,
+			"BackupS3Region":             backupDraftCfg.Region,
+			"BackupS3Bucket":             backupDraftCfg.Bucket,
+			"BackupS3AccessKey":          backupS3AccessKey,
+			"BackupS3SecretKey":          backupS3SecretKey,
+			"BackupS3Prefix":             backupDraftCfg.Prefix,
+			"BackupS3ForcePathStyle":     map[bool]string{true: "1", false: "0"}[backupDraftCfg.ForcePathStyle],
 			"CfEnvConnected":             cfEnvConnected,
 			"CfEnvStatus":                cfEnvStatus,
 			"AllCategories":              categories,
@@ -1694,7 +2242,7 @@ func main() {
 	}
 
 	admin.GET("/settings", func(c *gin.Context) {
-		renderSettingsPage(c, "settings", "")
+		renderSettingsPage(c, "basic", "")
 	})
 
 	admin.GET("/settings/skin", func(c *gin.Context) {
@@ -1775,7 +2323,7 @@ func main() {
 	})
 
 	admin.POST("/settings", writeProtectMiddleware, func(c *gin.Context) {
-		activeSection := c.DefaultPostForm("activeSection", "settings")
+		activeSection := c.DefaultPostForm("activeSection", "basic")
 		title := c.PostForm("title")
 		description := c.PostForm("description")
 		pageSize := c.PostForm("pageSize")
@@ -1825,6 +2373,14 @@ func main() {
 		cfRestoreSecurityLevel := strings.TrimSpace(c.PostForm("cfRestoreSecurityLevel"))
 		cfShieldAutoDisableMinutes := strings.TrimSpace(c.PostForm("cfShieldAutoDisableMinutes"))
 		cfShieldAutoBlockIP := c.DefaultPostForm("cfShieldAutoBlockIP", "0")
+		backupStorageType := strings.TrimSpace(c.DefaultPostForm("backupStorageType", "local"))
+		backupS3Endpoint := strings.TrimSpace(c.PostForm("backupS3Endpoint"))
+		backupS3Region := strings.TrimSpace(c.PostForm("backupS3Region"))
+		backupS3Bucket := strings.TrimSpace(c.PostForm("backupS3Bucket"))
+		backupS3AccessKey := strings.TrimSpace(c.PostForm("backupS3AccessKey"))
+		backupS3SecretKey := strings.TrimSpace(c.PostForm("backupS3SecretKey"))
+		backupS3Prefix := strings.TrimSpace(c.PostForm("backupS3Prefix"))
+		backupS3ForcePathStyle := c.DefaultPostForm("backupS3ForcePathStyle", "0")
 		if cfRequestLimitPerMinute == "" {
 			cfRequestLimitPerMinute = "1000"
 		}
@@ -1842,6 +2398,22 @@ func main() {
 		}
 		frontendServiceName = strings.TrimLeft(frontendServiceName, "-")
 		adminServiceName = strings.TrimLeft(adminServiceName, "-")
+		backupS3DraftEndpoint := backupS3Endpoint
+		backupS3DraftRegion := backupS3Region
+		backupS3DraftBucket := backupS3Bucket
+		backupS3DraftAccessKey := backupS3AccessKey
+		backupS3DraftSecretKey := backupS3SecretKey
+		backupS3DraftPrefix := backupS3Prefix
+		backupS3DraftForcePathStyle := backupS3ForcePathStyle
+		if backupStorageType != "s3" {
+			backupS3Endpoint = ""
+			backupS3Region = ""
+			backupS3Bucket = ""
+			backupS3AccessKey = ""
+			backupS3SecretKey = ""
+			backupS3Prefix = ""
+			backupS3ForcePathStyle = "0"
+		}
 
 		setOption(db, "title", title)
 		setOption(db, "description", description)
@@ -1884,6 +2456,20 @@ func main() {
 		setOption(db, "cfRestoreSecurityLevel", cfRestoreSecurityLevel)
 		setOption(db, "cfShieldAutoDisableMinutes", cfShieldAutoDisableMinutes)
 		setOption(db, "cfShieldAutoBlockIP", cfShieldAutoBlockIP)
+		setOption(db, "backupS3Endpoint", backupS3Endpoint)
+		setOption(db, "backupS3Region", backupS3Region)
+		setOption(db, "backupS3Bucket", backupS3Bucket)
+		setOption(db, "backupS3AccessKey", backupS3AccessKey)
+		setOption(db, "backupS3SecretKey", backupS3SecretKey)
+		setOption(db, "backupS3Prefix", backupS3Prefix)
+		setOption(db, "backupS3ForcePathStyle", backupS3ForcePathStyle)
+		setOption(db, "backupS3DraftEndpoint", backupS3DraftEndpoint)
+		setOption(db, "backupS3DraftRegion", backupS3DraftRegion)
+		setOption(db, "backupS3DraftBucket", backupS3DraftBucket)
+		setOption(db, "backupS3DraftAccessKey", backupS3DraftAccessKey)
+		setOption(db, "backupS3DraftSecretKey", backupS3DraftSecretKey)
+		setOption(db, "backupS3DraftPrefix", backupS3DraftPrefix)
+		setOption(db, "backupS3DraftForcePathStyle", backupS3DraftForcePathStyle)
 		applyConfiguredTimezone(db)
 
 		successMsg := "设置保存成功"
@@ -2107,6 +2693,43 @@ func main() {
 		msg := "Cloudflare 接口连接正常，配置已可用。"
 		if zoneName != "" {
 			msg = fmt.Sprintf("Cloudflare 接口连接正常，当前站点 %s 配置已可用。", zoneName)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"ok":      true,
+			"message": msg,
+		})
+	})
+
+	admin.POST("/settings/s3-test", writeProtectMiddleware, func(c *gin.Context) {
+		if strings.TrimSpace(c.DefaultPostForm("backupStorageType", "local")) != "s3" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"ok":      false,
+				"message": "当前未选择 S3 兼容存储。",
+			})
+			return
+		}
+
+		cfg := backupStorageConfig{
+			Endpoint:       strings.TrimSpace(c.PostForm("backupS3Endpoint")),
+			Region:         strings.TrimSpace(c.PostForm("backupS3Region")),
+			Bucket:         strings.TrimSpace(c.PostForm("backupS3Bucket")),
+			AccessKey:      strings.TrimSpace(c.PostForm("backupS3AccessKey")),
+			SecretKey:      strings.TrimSpace(c.PostForm("backupS3SecretKey")),
+			Prefix:         strings.TrimSpace(c.PostForm("backupS3Prefix")),
+			ForcePathStyle: c.DefaultPostForm("backupS3ForcePathStyle", "0") == "1",
+		}
+
+		if err := testS3Credentials(cfg); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"ok":      false,
+				"message": "检测失败：" + err.Error(),
+			})
+			return
+		}
+
+		msg := fmt.Sprintf("S3 接口连接正常，存储桶 %s 可读取。", cfg.Bucket)
+		if prefix := cfg.NormalizedPrefix(); prefix != "" {
+			msg = fmt.Sprintf("S3 接口连接正常，存储桶 %s 前缀 %s/ 可读取。", cfg.Bucket, prefix)
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"ok":      true,
@@ -2986,71 +3609,98 @@ func main() {
 	})
 
 	// Backup Management
-	admin.GET("/backups", func(c *gin.Context) {
+	renderBackupsPage := func(c *gin.Context, successMsg, errorMsg string) {
 		username, _ := c.Get("username")
 		adminPath, _ := c.Get("adminPath")
+		storageCfg := getBackupStorageConfig(db)
 
-		os.MkdirAll("backups", 0755)
-		files, _ := os.ReadDir("backups")
-		var backups []map[string]interface{}
-		for _, f := range files {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".tar.gz") {
-				info, _ := f.Info()
-				backups = append(backups, map[string]interface{}{
-					"Name":    f.Name(),
-					"Size":    fmt.Sprintf("%.2f MB", float64(info.Size())/(1024*1024)),
-					"Time":    info.ModTime().Format("2006-01-02 15:04:05"),
-					"RawTime": info.ModTime(),
-				})
+		localBackups, localErr := listLocalBackupEntries()
+		remoteBackups, remoteErr := listS3BackupEntries(storageCfg)
+		backups := append(localBackups, remoteBackups...)
+
+		sort.Slice(backups, func(i, j int) bool {
+			return backups[i].RawTime.After(backups[j].RawTime)
+		})
+
+		backupMutex.Lock()
+		running := isBackingUp
+		lastResult := backupLastResult
+		lastResultIsErr := backupLastResultIsErr
+		backupMutex.Unlock()
+
+		if successMsg == "" && errorMsg == "" {
+			switch c.Query("msg") {
+			case "created":
+				if running {
+					successMsg = "备份任务已启动，正在后台处理中..."
+				} else if lastResult != "" {
+					if lastResultIsErr {
+						errorMsg = lastResult
+					} else {
+						successMsg = lastResult
+					}
+				} else {
+					successMsg = "备份任务已完成"
+				}
+			case "deleted":
+				successMsg = "备份已删除"
+			case "vacuumed":
+				successMsg = "数据库压缩完成，无用空间已释放"
+			case "error":
+				errorMsg = "数据库压缩失败，请检查服务日志。"
+			default:
+				if !running && lastResult != "" {
+					if lastResultIsErr {
+						errorMsg = lastResult
+					} else {
+						successMsg = lastResult
+					}
+				}
 			}
 		}
 
-		// Sort by time descending
-		sort.Slice(backups, func(i, j int) bool {
-			return backups[i]["RawTime"].(time.Time).After(backups[j]["RawTime"].(time.Time))
-		})
-
-		msg := c.Query("msg")
-		var successMsg string
-		if msg == "created" {
-			backupMutex.Lock()
-			running := isBackingUp
-			backupMutex.Unlock()
-
-			if running {
-				successMsg = "备份任务已启动，正在后台处理中..."
-			} else {
-				successMsg = "备份任务已完成"
+		if localErr != nil {
+			if errorMsg != "" {
+				errorMsg += "；"
 			}
-		} else if msg == "deleted" {
-			successMsg = "备份已删除"
-		} else if msg == "vacuumed" {
-			successMsg = "数据库压缩完成，无用空间已释放"
+			errorMsg += "本地备份目录读取失败。"
+		}
+		if remoteErr != nil {
+			if errorMsg != "" {
+				errorMsg += "；"
+			}
+			errorMsg += remoteErr.Error()
 		}
 
 		c.HTML(http.StatusOK, "admin_backups.html", gin.H{
-			"Username":       username,
-			"Backups":        backups,
-			"Tab":            "backups",
-			"AdminPath":      adminPath,
-			"SuccessMessage": successMsg,
-			"IsBackingUp":    isBackingUp,
+			"Username":              username,
+			"Backups":               backups,
+			"Tab":                   "backups",
+			"AdminPath":             adminPath,
+			"SuccessMessage":        successMsg,
+			"ErrorMessage":          errorMsg,
+			"IsBackingUp":           running,
+			"BackupStorageMode":     map[bool]string{true: "S3 兼容存储", false: "本地目录"}[storageCfg.Enabled()],
+			"BackupStorageSummary":  storageCfg.Summary(),
+			"BackupStorageEnabled":  storageCfg.Enabled(),
+			"BackupStorageFallback": storageCfg.Enabled(),
 		})
+	}
+
+	admin.GET("/backups", func(c *gin.Context) {
+		renderBackupsPage(c, "", "")
 	})
 
 	admin.POST("/backups/create", writeProtectMiddleware, func(c *gin.Context) {
 		backupMutex.Lock()
 		if isBackingUp {
 			backupMutex.Unlock()
-			c.HTML(http.StatusOK, "admin_backups.html", gin.H{
-				"Username":     c.MustGet("username"),
-				"Tab":          "backups",
-				"AdminPath":    adminPath,
-				"ErrorMessage": "备份任务正在进行中，请在结束后再试。",
-			})
+			renderBackupsPage(c, "", "备份任务正在进行中，请在结束后再试。")
 			return
 		}
 		isBackingUp = true
+		backupLastResult = ""
+		backupLastResultIsErr = false
 		backupMutex.Unlock()
 
 		go func() {
@@ -3060,7 +3710,12 @@ func main() {
 				backupMutex.Unlock()
 			}()
 
-			os.MkdirAll("backups", 0755)
+			if err := os.MkdirAll("backups", 0755); err != nil {
+				setBackupResult("备份目录创建失败", true)
+				log.Printf("Background backup failed to create directory: %v", err)
+				return
+			}
+
 			filename := fmt.Sprintf("backup_%s.tar.gz", time.Now().Format("20060102_150405"))
 			targetPath := filepath.Join("backups", filename)
 
@@ -3073,10 +3728,34 @@ func main() {
 			// 如果你想把 wal/shm 也带上也可以，但 checkpoint 后 blog.sqlite 已经是完整的了
 			err := cmd.Run()
 			if err != nil {
+				setBackupResult("备份创建失败", true)
 				log.Printf("Background backup failed: %v", err)
-			} else {
-				log.Printf("Background backup created: %s", targetPath)
+				return
 			}
+
+			storageCfg := getBackupStorageConfig(db)
+			if storageCfg.Enabled() {
+				if err := uploadBackupToS3(storageCfg, targetPath, filename); err != nil {
+					setBackupResult(fmt.Sprintf("S3 上传失败，备份已保留在本地 backups/%s", filename), true)
+					log.Printf("Background backup uploaded failed: %v", err)
+					return
+				}
+				if err := os.Remove(targetPath); err != nil {
+					setBackupResult(fmt.Sprintf("备份已上传到 S3，但本地文件清理失败：backups/%s", filename), false)
+					log.Printf("Background backup cleanup failed: %v", err)
+					return
+				}
+				setBackupResult(fmt.Sprintf("备份已上传到 S3 存储桶 %s", storageCfg.Bucket), false)
+				log.Printf("Background backup uploaded to S3: %s", storageCfg.ObjectKey(filename))
+				return
+			}
+
+			if storageCfg.HasAnyValue() {
+				setBackupResult("S3 配置未填写完整，备份已保存到本地 backups/ 目录", false)
+			} else {
+				setBackupResult("备份任务已完成", false)
+			}
+			log.Printf("Background backup created: %s", targetPath)
 		}()
 
 		c.Redirect(http.StatusFound, adminPath+"/backups?msg=created")
@@ -3093,8 +3772,28 @@ func main() {
 			return
 		}
 
-		path := filepath.Join("backups", safeFilename)
-		os.Remove(path)
+		switch c.DefaultPostForm("storage", "local") {
+		case "local":
+			path := filepath.Join("backups", safeFilename)
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				renderBackupsPage(c, "", "本地备份删除失败。")
+				return
+			}
+		case "s3":
+			storageCfg := getBackupStorageConfig(db)
+			if !storageCfg.Enabled() {
+				renderBackupsPage(c, "", "S3 配置未填写完整，无法删除远端备份。")
+				return
+			}
+			if err := deleteBackupFromS3(storageCfg, safeFilename); err != nil {
+				renderBackupsPage(c, "", err.Error())
+				return
+			}
+		default:
+			c.String(400, "非法操作：未知备份存储类型")
+			return
+		}
+
 		c.Redirect(http.StatusFound, adminPath+"/backups?msg=deleted")
 	})
 

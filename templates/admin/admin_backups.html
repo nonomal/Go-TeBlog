@@ -484,6 +484,13 @@
             </header>
 
             <div id="backupRuntimePanel" data-is-backing-up="{{.IsBackingUp}}">
+                <div class="alert" style="background: {{if .BackupStorageEnabled}}#eff6ff{{else}}#f8fafc{{end}}; color: {{if .BackupStorageEnabled}}#1d4ed8{{else}}#475569{{end}}; border-color: {{if .BackupStorageEnabled}}#bfdbfe{{else}}#e2e8f0{{end}};">
+                    <i class="fas {{if .BackupStorageEnabled}}fa-cloud{{else}}fa-folder-open{{end}}"></i>
+                    <div>
+                        <strong>当前使用的备份存储方式：{{.BackupStorageMode}}</strong>
+                    </div>
+                </div>
+
                 {{if .IsBackingUp}}
                 <div class="alert" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">
                     <i class="fas fa-spinner fa-spin"></i> 备份任务正在后台运行中，页面将自动刷新状态...
@@ -511,6 +518,7 @@
                         <thead>
                             <tr>
                                 <th>文件名</th>
+                                <th>位置</th>
                                 <th>大小</th>
                                 <th>创建时间</th>
                                 <th style="text-align: right;">操作</th>
@@ -522,12 +530,14 @@
                                 <td
                                     style="font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; color: #475569;">
                                     {{.Name}}</td>
+                                <td>{{.Storage}}</td>
                                 <td>{{.Size}}</td>
                                 <td>{{.Time}}</td>
                                 <td style="text-align: right;">
                                     <div class="action-group">
                                         <form action="{{adminPath}}/backups/delete/{{.Name}}" method="POST"
                                             class="inline-form backup-delete-form">
+                                            <input type="hidden" name="storage" value="{{if eq .Storage "S3"}}s3{{else}}local{{end}}">
                                             <button type="submit" class="icon-action-btn delete" title="删除" aria-label="删除">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -554,8 +564,9 @@
                 </h4>
                 <ul style="margin: 0; padding-left: 20px;">
                     <li>备份包包含数据库文件 (blog.sqlite) 及所有用户上传内容 (usr/ 目录)。</li>
-                    <li>生成的备份文件仅存放在服务器本地的 <code>backups/</code> 目录下，不对外提供下载。</li>
-                    <li><strong>建议：</strong> 定期通过 SSH 等安全方式将服务器端的备份文件转移至安全的地方。</li>
+                    <li>未配置 S3 时，备份仅存放在服务器本地的 <code>backups/</code> 目录下，不对外提供下载。</li>
+                    <li>配置完整的 S3 兼容存储后，新备份会上传到远端；上传失败时会保留本地文件。</li>
+                    <li><strong>建议：</strong> 定期检查远端存储和本地兜底文件是否符合你的保留策略。</li>
                 </ul>
             </div>
         </div>

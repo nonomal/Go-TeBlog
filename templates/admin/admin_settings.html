@@ -276,6 +276,51 @@
             color: #0f172a;
         }
 
+        .backup-status-badge {
+            margin-left: auto;
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #bbf7d0;
+        }
+
+        .backup-status-badge.warning {
+            display: inline-flex;
+            background: #fef2f2;
+            color: #b91c1c;
+            border-color: #fecaca;
+        }
+
+        .backup-inline-hint {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.5;
+            background: #f8fafc;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            display: none;
+        }
+
+        .backup-inline-hint.warning {
+            display: block;
+            background: #fef2f2;
+            color: #991b1b;
+            border-color: #fecaca;
+        }
+
+        .backup-section-warning .section-header i,
+        .backup-section-warning .section-header h3 {
+            color: #b91c1c;
+        }
+
         .section-body {
             padding: 30px;
         }
@@ -558,6 +603,8 @@
                         aria-selected="false"><i class="fas fa-robot"></i>AI系统参数</button>
                     <button type="button" class="settings-tab" data-settings-tab="shield" role="tab"
                         aria-selected="false"><i class="fas fa-cloud"></i>访问防护</button>
+                    <button type="button" class="settings-tab" data-settings-tab="backup" role="tab"
+                        aria-selected="false"><i class="fas fa-database"></i>备份</button>
                     <button type="button" class="settings-tab" data-settings-tab="advanced" role="tab"
                         aria-selected="false"><i class="fas fa-sliders-h"></i>其它设置</button>
                 </div>
@@ -980,6 +1027,74 @@
                     </div>
                 </div>
 
+                <!-- 备份设置 -->
+                <div class="settings-section" data-settings-panel="backup" role="tabpanel" id="backupSettingsSection">
+                    <div class="section-header">
+                        <i class="fas fa-database"></i>
+                        <h3>备份设置</h3>
+                        <span class="backup-status-badge" id="backupConfigStatus">当前配置完整</span>
+                    </div>
+                    <div class="section-body">
+                        <div class="form-grid">
+                            <div class="form-group full-width">
+                                <label>备份存储方式</label>
+                                <span class="label-desc">选择“本地存储”并保存后，会清空当前生效的 S3 配置；下方参数会作为 S3 草稿保留，后续切回 S3 时可继续使用。</span>
+                                <select name="backupStorageType" id="backupStorageTypeSelect">
+                                    <option value="local" {{if eq .BackupStorageType "local"}}selected{{end}}>本地存储（backups/）</option>
+                                    <option value="s3" {{if eq .BackupStorageType "s3"}}selected{{end}}>S3 兼容存储</option>
+                                </select>
+                                <div class="backup-inline-hint" id="backupConfigHint"></div>
+                            </div>
+                        </div>
+                        <div class="form-grid" id="backupS3Fields">
+                            <div class="form-group full-width">
+                                <label>S3 兼容参数</label>
+                                <span class="label-desc">选择 S3 时，这组参数会写入当前生效配置；切回本地时，这组参数会保留为草稿。填写完整后，新备份会上传到远端；上传失败时，本地文件会保留作兜底。</span>
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Endpoint</label>
+                                <input type="text" name="backupS3Endpoint" value="{{.BackupS3Endpoint}}" placeholder="https://s3.example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Region</label>
+                                <input type="text" name="backupS3Region" value="{{.BackupS3Region}}" placeholder="">
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Bucket</label>
+                                <input type="text" name="backupS3Bucket" value="{{.BackupS3Bucket}}" placeholder="my-blog-backups">
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Access Key</label>
+                                <input type="text" name="backupS3AccessKey" value="{{.BackupS3AccessKey}}" placeholder="AKIA...">
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Secret Key</label>
+                                <input type="text" name="backupS3SecretKey" value="{{.BackupS3SecretKey}}" placeholder="secret key">
+                            </div>
+                            <div class="form-group">
+                                <label>S3 Prefix</label>
+                                <span class="label-desc">可选，对象名前缀，不要以 <code>/</code> 开头。</span>
+                                <input type="text" name="backupS3Prefix" value="{{.BackupS3Prefix}}" placeholder="">
+                            </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label>强制 Path-Style</label>
+                                <span class="label-desc">部分 S3 兼容服务需要使用 <code>endpoint/bucket/key</code> 形式访问。</span>
+                                <label class="switch">
+                                    <input type="checkbox" name="backupS3ForcePathStyle" value="1" {{if eq .BackupS3ForcePathStyle "1"}}checked{{end}}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>S3 连通性检测</label>
+                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用当前表单参数发起只读检测，验证存储桶和前缀是否可读取。{{end}}</span>
+                                <button type="button" class="btn-secondary" id="s3TestBtn" {{if eq .UserGroup "visitor"}}disabled{{end}}>
+                                    <i class="fas fa-cloud" style="margin-right: 8px;"></i>检测
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 其它设置 -->
                 <div class="settings-section" data-settings-panel="advanced" role="tabpanel">
                     <div class="section-header">
@@ -1060,8 +1175,8 @@
                 }, true);
             });
 
-            let initialTab = '{{if eq .ActiveSection "skin"}}skin{{else}}basic{{end}}';
-            if (initialTab !== 'skin') {
+            let initialTab = '{{if eq .ActiveSection "skin"}}skin{{else if eq .ActiveSection "backup"}}backup{{else}}basic{{end}}';
+            if (initialTab !== 'skin' && initialTab !== 'backup') {
                 try {
                     initialTab = window.localStorage.getItem(storageKey) || initialTab;
                 } catch (error) {
@@ -1146,6 +1261,101 @@
                 window.clearTimeout(saveTimer);
                 saveSettings();
             });
+        })();
+
+        (function () {
+            const storageTypeSelect = document.getElementById('backupStorageTypeSelect');
+            const s3Fields = document.getElementById('backupS3Fields');
+            const backupSection = document.getElementById('backupSettingsSection');
+            const backupStatus = document.getElementById('backupConfigStatus');
+            const backupHint = document.getElementById('backupConfigHint');
+            const s3TestBtn = document.getElementById('s3TestBtn');
+            if (!storageTypeSelect || !s3Fields) {
+                return;
+            }
+
+            const s3Inputs = Array.from(s3Fields.querySelectorAll('input'));
+            const isVisitor = {{if eq .UserGroup "visitor"}}true{{else}}false{{end}};
+            const requiredS3Fields = [
+                { name: 'backupS3Endpoint', label: 'S3 Endpoint' },
+                { name: 'backupS3Region', label: 'S3 Region' },
+                { name: 'backupS3Bucket', label: 'S3 Bucket' },
+                { name: 'backupS3AccessKey', label: 'S3 Access Key' },
+                { name: 'backupS3SecretKey', label: 'S3 Secret Key' }
+            ];
+
+            function readMissingFields() {
+                return requiredS3Fields.filter(function (item) {
+                    const input = document.querySelector('input[name="' + item.name + '"]');
+                    return !input || !input.value.trim();
+                });
+            }
+
+            function updateBackupHint(enabled) {
+                if (!backupStatus || !backupHint || !backupSection) {
+                    return;
+                }
+
+                if (!enabled) {
+                    backupStatus.classList.remove('warning');
+                    backupHint.classList.remove('warning');
+                    backupHint.textContent = '';
+                    backupSection.classList.remove('backup-section-warning');
+                    return;
+                }
+
+                const missingFields = readMissingFields();
+                const messages = [];
+
+                if (isVisitor) {
+                    messages.push('当前为 guest/visitor 演示模式，切换结果无法保存。');
+                }
+
+                if (missingFields.length === 0) {
+                    if (messages.length === 0) {
+                        backupStatus.classList.remove('warning');
+                        backupHint.classList.remove('warning');
+                        backupHint.textContent = '';
+                        backupSection.classList.remove('backup-section-warning');
+                        return;
+                    }
+
+                    backupStatus.classList.add('warning');
+                    backupHint.classList.add('warning');
+                    backupHint.textContent = messages.join(' ');
+                    backupSection.classList.add('backup-section-warning');
+                    return;
+                }
+
+                messages.unshift('已选择 S3 兼容存储，但以下必填项尚未填写完整：' + missingFields.map(function (item) {
+                    return item.label;
+                }).join('、') + '。');
+                backupStatus.textContent = 'S3 配置未完成';
+                backupStatus.classList.add('warning');
+                backupHint.classList.add('warning');
+                backupHint.textContent = messages.join(' ');
+                backupSection.classList.add('backup-section-warning');
+            }
+
+            function updateBackupStorageFields() {
+                const enabled = storageTypeSelect.value === 's3';
+                s3Fields.style.opacity = enabled ? '1' : '0.55';
+                if (s3TestBtn) {
+                    s3TestBtn.disabled = isVisitor || !enabled;
+                }
+                updateBackupHint(enabled);
+            }
+
+            storageTypeSelect.addEventListener('change', updateBackupStorageFields);
+            s3Inputs.forEach(function (input) {
+                input.addEventListener('input', function () {
+                    updateBackupHint(storageTypeSelect.value === 's3');
+                });
+                input.addEventListener('change', function () {
+                    updateBackupHint(storageTypeSelect.value === 's3');
+                });
+            });
+            updateBackupStorageFields();
         })();
 
         (function () {
@@ -1366,6 +1576,71 @@
                         showResult(false, '请求失败，请稍后再试。');
                     } finally {
                         btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-cloud" style="margin-right: 8px;"></i>检测';
+                    }
+                });
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', resetTitle);
+            }
+        })();
+
+        (function () {
+            const btn = document.getElementById('s3TestBtn');
+            const modal = document.getElementById('aiTestModal');
+            const closeBtn = document.getElementById('aiTestModalClose');
+            const titleEl = document.querySelector('.result-frame-title');
+            const statusEl = document.getElementById('aiTestStatus');
+            const messageEl = document.getElementById('aiTestMessage');
+            const storageTypeSelect = document.getElementById('backupStorageTypeSelect');
+
+            function showResult(ok, message) {
+                titleEl.textContent = 'S3 检测结果';
+                statusEl.className = 'result-status ' + (ok ? 'ok' : 'fail');
+                statusEl.innerHTML = ok
+                    ? '<i class="fas fa-check-circle"></i><span>连接正常</span>'
+                    : '<i class="fas fa-times-circle"></i><span>连接失败</span>';
+                messageEl.textContent = message;
+                modal.classList.add('active');
+            }
+
+            function resetTitle() {
+                titleEl.textContent = 'AI 检测结果';
+            }
+
+            if (btn) {
+                btn.addEventListener('click', async function () {
+                    const formData = new URLSearchParams();
+
+                    formData.append('backupStorageType', storageTypeSelect ? storageTypeSelect.value : 'local');
+                    formData.append('backupS3Endpoint', (document.querySelector('input[name="backupS3Endpoint"]') || {}).value || '');
+                    formData.append('backupS3Region', (document.querySelector('input[name="backupS3Region"]') || {}).value || '');
+                    formData.append('backupS3Bucket', (document.querySelector('input[name="backupS3Bucket"]') || {}).value || '');
+                    formData.append('backupS3AccessKey', (document.querySelector('input[name="backupS3AccessKey"]') || {}).value || '');
+                    formData.append('backupS3SecretKey', (document.querySelector('input[name="backupS3SecretKey"]') || {}).value || '');
+                    formData.append('backupS3Prefix', (document.querySelector('input[name="backupS3Prefix"]') || {}).value || '');
+                    formData.append('backupS3ForcePathStyle', document.querySelector('input[name="backupS3ForcePathStyle"]')?.checked ? '1' : '0');
+
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>检测中';
+
+                    try {
+                        const response = await fetch('{{adminPath}}/settings/s3-test', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: formData.toString()
+                        });
+                        const data = await response.json();
+                        showResult(Boolean(data.ok), data.message || '检测失败');
+                    } catch (error) {
+                        showResult(false, '请求失败，请稍后再试。');
+                    } finally {
+                        const enabled = storageTypeSelect && storageTypeSelect.value === 's3';
+                        btn.disabled = !enabled;
                         btn.innerHTML = '<i class="fas fa-cloud" style="margin-right: 8px;"></i>检测';
                     }
                 });
