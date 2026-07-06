@@ -438,11 +438,19 @@ func readS3Error(resp *http.Response) error {
 	if len(body) > 0 {
 		var apiErr s3ErrorResult
 		if err := xml.Unmarshal(body, &apiErr); err == nil && strings.TrimSpace(apiErr.Message) != "" {
-			return fmt.Errorf("S3 请求失败 (%d): %s", resp.StatusCode, strings.TrimSpace(apiErr.Message))
+			return formatS3UserError(strings.TrimSpace(apiErr.Message))
 		}
-		return fmt.Errorf("S3 请求失败 (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return formatS3UserError(strings.TrimSpace(string(body)))
 	}
-	return fmt.Errorf("S3 请求失败 (%d)", resp.StatusCode)
+	return formatS3UserError(fmt.Sprintf("服务返回状态码 %d", resp.StatusCode))
+}
+
+func formatS3UserError(detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return fmt.Errorf("S3 参数或服务异常，请检查 S3 参数或稍后重试。")
+	}
+	return fmt.Errorf("S3 参数或服务异常，错误信息：%s", detail)
 }
 
 func parseS3ObjectTime(value string) time.Time {
@@ -487,7 +495,7 @@ func listS3BackupEntries(cfg backupStorageConfig) ([]backupEntry, error) {
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("S3 列表读取失败: %w", err)
+			return nil, formatS3UserError(err.Error())
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			err = readS3Error(resp)
@@ -499,7 +507,7 @@ func listS3BackupEntries(cfg backupStorageConfig) ([]backupEntry, error) {
 		err = xml.NewDecoder(resp.Body).Decode(&result)
 		resp.Body.Close()
 		if err != nil {
-			return nil, fmt.Errorf("S3 列表解析失败")
+			return nil, formatS3UserError("S3 列表返回内容解析失败")
 		}
 
 		for _, item := range result.Contents {
@@ -558,7 +566,7 @@ func uploadBackupToS3(cfg backupStorageConfig, localPath, filename string) error
 
 	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
 	if err != nil {
-		return fmt.Errorf("S3 上传失败: %w", err)
+		return formatS3UserError(err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -576,7 +584,7 @@ func deleteBackupFromS3(cfg backupStorageConfig, filename string) error {
 
 	resp, err := (&http.Client{Timeout: 90 * time.Second}).Do(req)
 	if err != nil {
-		return fmt.Errorf("S3 删除失败: %w", err)
+		return formatS3UserError(err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -605,7 +613,7 @@ func testS3Credentials(cfg backupStorageConfig) error {
 
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		return fmt.Errorf("S3 读取失败: %w", err)
+		return formatS3UserError(err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -615,7 +623,7 @@ func testS3Credentials(cfg backupStorageConfig) error {
 
 	var result s3ListBucketResult
 	if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("S3 返回解析失败")
+		return formatS3UserError("S3 返回内容解析失败")
 	}
 
 	return nil

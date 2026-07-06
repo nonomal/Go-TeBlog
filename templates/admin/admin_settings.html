@@ -1038,7 +1038,6 @@
                         <div class="form-grid">
                             <div class="form-group full-width">
                                 <label>备份存储方式</label>
-                                <span class="label-desc">选择“本地存储”并保存后，会清空当前生效的 S3 配置；下方参数会作为 S3 草稿保留，后续切回 S3 时可继续使用。</span>
                                 <select name="backupStorageType" id="backupStorageTypeSelect">
                                     <option value="local" {{if eq .BackupStorageType "local"}}selected{{end}}>本地存储（backups/）</option>
                                     <option value="s3" {{if eq .BackupStorageType "s3"}}selected{{end}}>S3 兼容存储</option>
@@ -1049,7 +1048,7 @@
                         <div class="form-grid" id="backupS3Fields">
                             <div class="form-group full-width">
                                 <label>S3 兼容参数</label>
-                                <span class="label-desc">选择 S3 时，这组参数会写入当前生效配置；切回本地时，这组参数会保留为草稿。填写完整后，新备份会上传到远端；上传失败时，本地文件会保留作兜底。</span>
+                                <span class="label-desc">上传失败时，本地文件会保留。</span>
                             </div>
                             <div class="form-group">
                                 <label>S3 Endpoint</label>
