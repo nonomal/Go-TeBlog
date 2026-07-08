@@ -1171,7 +1171,9 @@
             });
 
             let initialTab = '{{if eq .ActiveSection "skin"}}skin{{else if eq .ActiveSection "backup"}}backup{{else}}basic{{end}}';
-            if (initialTab !== 'skin' && initialTab !== 'backup') {
+            if (window.location.hash === '#backup') {
+                initialTab = 'backup';
+            } else if (initialTab !== 'skin' && initialTab !== 'backup') {
                 try {
                     initialTab = window.localStorage.getItem(storageKey) || initialTab;
                 } catch (error) {

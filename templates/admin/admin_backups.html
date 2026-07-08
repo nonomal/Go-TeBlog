@@ -753,7 +753,7 @@
                 <div class="alert" style="background: {{if .BackupStorageEnabled}}#eff6ff{{else}}#f8fafc{{end}}; color: {{if .BackupStorageEnabled}}#1d4ed8{{else}}#475569{{end}}; border-color: {{if .BackupStorageEnabled}}#bfdbfe{{else}}#e2e8f0{{end}};">
                     <i class="fas {{if .BackupStorageEnabled}}fa-cloud{{else}}fa-folder-open{{end}}"></i>
                     <div>
-                        <strong>当前使用的备份存储方式：{{.BackupStorageMode}}</strong>
+                        <strong>当前使用的备份存储方式：{{.BackupStorageMode}}<a href="{{adminPath}}/settings#backup" style="margin-left: 8px; color: #0984e3; text-decoration: underline; font-weight: 500;">切换</a></strong>
                     </div>
                 </div>
 
