@@ -3462,12 +3462,13 @@ func main() {
 
 	admin.GET("/posts", func(c *gin.Context) {
 		pageStr := c.DefaultQuery("page", "1")
+		searchQuery := strings.TrimSpace(c.Query("q"))
 		page := 1
 		fmt.Sscanf(pageStr, "%d", &page)
 		if page < 1 {
 			page = 1
 		}
-		pageSize := 20
+		pageSize := 10
 		offset := (page - 1) * pageSize
 
 		group, _ := c.Get("userGroup")
@@ -3502,13 +3503,19 @@ func main() {
 			}
 		}
 
+		whereClause := " WHERE type='post'"
+		queryArgs := []interface{}{}
 		if group == "visitor" {
-			db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post' AND status='publish'").Scan(&total)
-			rows, err = db.Query("SELECT cid, title, created, status FROM typecho_contents WHERE type='post' AND status='publish' ORDER BY "+orderBy+" LIMIT ? OFFSET ?", pageSize, offset)
-		} else {
-			db.QueryRow("SELECT COUNT(*) FROM typecho_contents WHERE type='post'").Scan(&total)
-			rows, err = db.Query("SELECT cid, title, created, status FROM typecho_contents WHERE type='post' ORDER BY "+orderBy+" LIMIT ? OFFSET ?", pageSize, offset)
+			whereClause += " AND status='publish'"
 		}
+		if searchQuery != "" {
+			escapedQuery := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(searchQuery)
+			whereClause += " AND title LIKE ? ESCAPE '\\'"
+			queryArgs = append(queryArgs, "%"+escapedQuery+"%")
+		}
+		db.QueryRow("SELECT COUNT(*) FROM typecho_contents"+whereClause, queryArgs...).Scan(&total)
+		queryArgs = append(queryArgs, pageSize, offset)
+		rows, err = db.Query("SELECT cid, title, created, status FROM typecho_contents"+whereClause+" ORDER BY "+orderBy+" LIMIT ? OFFSET ?", queryArgs...)
 
 		if err != nil {
 			c.String(500, err.Error())
@@ -3537,6 +3544,7 @@ func main() {
 			"Username":    username,
 			"UserGroup":   group,
 			"Posts":       posts,
+			"SearchQuery": searchQuery,
 			"Tab":         "posts",
 			"CurrentPage": page,
 			"TotalPages":  totalPages,

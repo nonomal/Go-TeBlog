@@ -239,49 +239,42 @@
             transform: translateY(-1px);
         }
 
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 40px;
-            height: 22px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #cbd5e1;
-            transition: .4s;
-            border-radius: 34px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
+        .publish-checkbox {
             width: 16px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
+            height: 16px;
+            margin: 0;
+            cursor: pointer;
+            appearance: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: #fff;
+            display: inline-grid;
+            place-content: center;
+            transition: all 0.18s ease;
         }
 
-        input:checked+.slider {
-            background-color: #3b82f6;
+        .publish-checkbox::before {
+            content: "✓";
+            color: #059669;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            transform: scale(0);
+            transition: transform 0.18s ease;
         }
 
-        input:checked+.slider:before {
-            transform: translateX(18px);
+        .publish-checkbox:checked {
+            border-color: #86efac;
+            background: #ecfdf5;
+        }
+
+        .publish-checkbox:checked::before {
+            transform: scale(1);
+        }
+
+        .publish-checkbox:focus-visible {
+            outline: 2px solid #a7f3d0;
+            outline-offset: 2px;
         }
 
         .pager {
@@ -398,6 +391,125 @@
             color: #9f1239;
         }
 
+        .icon-action-btn.top {
+            color: #94a3b8;
+        }
+
+        .icon-action-btn.top.active {
+            border-color: #f7d98d;
+            background: #fffbeb;
+            color: #d97706;
+        }
+
+        .top-confirm-popover {
+            position: fixed;
+            display: none;
+            width: 190px;
+            padding: 12px;
+            border: 1px solid #dbe4ea;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+            z-index: 180;
+            box-sizing: border-box;
+        }
+
+        .top-confirm-popover p {
+            margin: 0 0 10px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .top-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+
+        .top-confirm-actions button {
+            padding: 5px 9px;
+            border: 1px solid #dbe4ea;
+            border-radius: 6px;
+            background: #fff;
+            color: #475569;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .top-confirm-actions .confirm {
+            border-color: #0984e3;
+            background: #0984e3;
+            color: #fff;
+        }
+
+        .top-confirm-popover.delete-confirm .top-confirm-actions .confirm {
+            border-color: #e11d48;
+            background: #e11d48;
+        }
+
+        .posts-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .posts-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+
+        .posts-toolbar .btn-new {
+            margin-bottom: 0;
+        }
+
+        .post-search-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .post-search-input {
+            width: 200px;
+            height: 34px;
+            padding: 0 11px;
+            border: 1px solid #dbe4ea;
+            border-radius: 8px;
+            box-sizing: border-box;
+            color: #334155;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .post-search-input:focus {
+            border-color: #93c5fd;
+        }
+
+        .post-search-btn,
+        .post-search-clear {
+            height: 34px;
+            padding: 0 11px;
+            border: 1px solid #dbe4ea;
+            border-radius: 8px;
+            background: #fff;
+            color: #475569;
+            cursor: pointer;
+            font-size: 13px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            box-sizing: border-box;
+        }
+
+        .post-search-btn:hover,
+        .post-search-clear:hover {
+            border-color: #93c5fd;
+            color: #0984e3;
+        }
+
         .post-preview-mask {
             position: fixed;
             inset: 0;
@@ -499,14 +611,21 @@
     {{template "admin_topbar" .}}
 
     <div class="content">
-        <a href="{{adminPath}}/edit/new" class="btn btn-new">发布新文章</a>
-        <table>
+        <div class="posts-container">
+            <div class="posts-toolbar">
+                <form class="post-search-form" action="{{adminPath}}/posts" method="GET">
+                    <input class="post-search-input" type="search" name="q" value="{{.SearchQuery}}" placeholder="搜索文章标题" aria-label="搜索文章标题">
+                    <button class="post-search-btn" type="submit"><i class="fas fa-search"></i> 搜索</button>
+                    {{if .SearchQuery}}<a class="post-search-clear" href="{{adminPath}}/posts">清除</a>{{end}}
+                </form>
+                <a href="{{adminPath}}/edit/new" class="btn btn-new">发布新文章</a>
+            </div>
+            <table>
             <thead>
                 <tr>
                     <th>标题</th>
                     <th>日期</th>
-                    <th>置顶</th>
-                    <th>状态</th>
+                    <th>发布</th>
                     <th>操作</th>
                 </tr>
             </thead>
@@ -515,27 +634,22 @@
                 <tr>
                     <td>{{.Title}}</td>
                     <td>{{.Created}}</td>
-                    <td style="text-align: center;">
-                        <i class="fa{{if .IsTop}}s{{else}}r{{end}} fa-star" 
-                           style="cursor: pointer; color: {{if .IsTop}}#f1c40f{{else}}#cbd5e1{{end}}; font-size: 1.2em;" 
-                           onclick="toggleTop({{.Cid}}, this)"></i>
-                    </td>
                     <td>
-                        <label class="switch">
-                            <input type="checkbox" {{if eq .Status "publish" }}checked{{end}} onchange="toggleStatus({{.Cid}}, this)">
-                            <span class="slider"></span>
-                        </label>
+                        <input class="publish-checkbox" type="checkbox" {{if eq .Status "publish" }}checked{{end}} onchange="toggleStatus({{.Cid}}, this)" title="切换发布状态" aria-label="切换发布状态">
                     </td>
                     <td>
                         <div class="action-group">
                             <button type="button" class="icon-action-btn post-preview-btn" data-cid="{{.Cid}}" title="预览" aria-label="预览">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            <button type="button" class="icon-action-btn top{{if .IsTop}} active{{end}}" title="{{if .IsTop}}取消置顶{{else}}置顶{{end}}" aria-label="{{if .IsTop}}取消置顶{{else}}置顶{{end}}" onclick="showTopConfirm({{.Cid}}, this)">
+                                <i class="fa{{if .IsTop}}s{{else}}r{{end}} fa-star"></i>
+                            </button>
                             <a href="{{adminPath}}/edit/{{.Cid}}" class="icon-action-btn" title="编辑" aria-label="编辑">
                                 <i class="fas fa-pen"></i>
                             </a>
-                            <form action="{{adminPath}}/post/delete/{{.Cid}}" method="POST" class="inline-form" onsubmit="return confirm('确定要删除这篇文章吗？删除后无法恢复！')">
-                                <button type="submit" class="icon-action-btn delete" title="删除" aria-label="删除">
+                            <form action="{{adminPath}}/post/delete/{{.Cid}}" method="POST" class="inline-form">
+                                <button type="button" class="icon-action-btn delete" title="删除" aria-label="删除" onclick="showDeleteConfirm(this.form, this)">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
@@ -544,26 +658,54 @@
                 </tr>
                 {{end}}
             </tbody>
-        </table>
+            </table>
 
-        {{if gt .TotalPages 1}}
-        <div class="pager">
+            {{if gt .TotalPages 1}}
+            <div class="pager">
             {{if .HasPrev}}
-            <a href="?page={{.PrevPage}}">&lt;</a>
+            <a href="?q={{urlquery .SearchQuery}}&page={{.PrevPage}}">&lt;</a>
             {{else}}
             <span class="nav-arrow">&lt;</span>
             {{end}}
 
-            {{range $p := iterate 1 .TotalPages}}
-                {{if eq $p $.CurrentPage}}
-                <span class="active">{{$p}}</span>
+            {{$current := .CurrentPage}}
+            {{$total := .TotalPages}}
+            {{if le $total 7}}
+                {{range $p := iterate 1 $total}}
+                    {{if eq $p $current}}
+                    <span class="active">{{$p}}</span>
+                    {{else}}
+                    <a href="?q={{urlquery $.SearchQuery}}&page={{$p}}">{{$p}}</a>
+                    {{end}}
+                {{end}}
+            {{else}}
+                {{if eq $current 1}}
+                <span class="active">1</span>
                 {{else}}
-                <a href="?page={{$p}}">{{$p}}</a>
+                <a href="?q={{urlquery $.SearchQuery}}&page=1">1</a>
+                {{end}}
+
+                {{if gt $current 4}}<span>···</span>{{end}}
+
+                {{range $p := pageRange $current $total}}
+                    {{if eq $p $current}}
+                    <span class="active">{{$p}}</span>
+                    {{else}}
+                    <a href="?q={{urlquery $.SearchQuery}}&page={{$p}}">{{$p}}</a>
+                    {{end}}
+                {{end}}
+
+                {{if lt $current (sub $total 3)}}<span>···</span>{{end}}
+
+                {{if eq $current $total}}
+                <span class="active">{{$total}}</span>
+                {{else}}
+                <a href="?q={{urlquery $.SearchQuery}}&page={{$total}}">{{$total}}</a>
                 {{end}}
             {{end}}
 
             {{if .HasNext}}
-            <a href="?page={{.NextPage}}">&gt;</a>
+            <a href="?q={{urlquery .SearchQuery}}&page={{.NextPage}}">&gt;</a>
             {{else}}
             <span class="nav-arrow">&gt;</span>
             {{end}}
@@ -573,17 +715,20 @@
                 <input type="number" id="gotoPage" min="1" max="{{.TotalPages}}" value="{{.CurrentPage}}" onkeydown="if(event.key==='Enter')gotoPage()">
                 <span>页</span>
             </div>
-        </div>
-        <script>
+            </div>
+            <script>
             function gotoPage() {
                 var page = parseInt(document.getElementById('gotoPage').value);
                 var total = {{.TotalPages}};
                 if (page >= 1 && page <= total) {
-                    window.location.href = "?page=" + page;
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('page', page);
+                    window.location.search = params.toString();
                 }
             }
-        </script>
-        {{end}}
+            </script>
+            {{end}}
+        </div>
     </div>
     <div id="postPreviewMask" class="post-preview-mask"></div>
     <div id="postPreviewLayer" class="post-preview-layer">
@@ -595,6 +740,13 @@
         </div>
         <div id="postPreviewBody" class="post-preview-body"></div>
     </div>
+    <div id="topConfirmPopover" class="top-confirm-popover" role="dialog" aria-modal="false" aria-live="polite">
+        <p id="topConfirmText"></p>
+        <div class="top-confirm-actions">
+            <button type="button" id="topConfirmCancel">取消</button>
+            <button type="button" class="confirm" id="topConfirmSubmit">确认</button>
+        </div>
+    </div>
     <script>
         const postPreviewMask = document.getElementById('postPreviewMask');
         const postPreviewLayer = document.getElementById('postPreviewLayer');
@@ -602,6 +754,11 @@
         const postPreviewCloseBtn = document.getElementById('postPreviewCloseBtn');
         const postPreviewCache = new Map();
         let activePreviewCid = null;
+        const topConfirmPopover = document.getElementById('topConfirmPopover');
+        const topConfirmText = document.getElementById('topConfirmText');
+        const topConfirmCancel = document.getElementById('topConfirmCancel');
+        const topConfirmSubmit = document.getElementById('topConfirmSubmit');
+        let pendingConfirmAction = null;
 
         function closePostPreviewLayer() {
             activePreviewCid = null;
@@ -652,21 +809,78 @@
             if (event.key === 'Escape' && postPreviewLayer.style.display === 'block') {
                 closePostPreviewLayer();
             }
+            if (event.key === 'Escape') {
+                hideTopConfirm();
+            }
         });
 
-        function toggleTop(cid, icon) {
+        function showTopConfirm(cid, button) {
+            const rect = button.getBoundingClientRect();
+            const isTop = button.classList.contains('active');
+            pendingConfirmAction = { type: 'top', cid: cid, button: button };
+            topConfirmText.textContent = isTop ? '确认取消置顶这篇文章吗？' : '确认置顶这篇文章吗？';
+            topConfirmPopover.classList.remove('delete-confirm');
+            topConfirmPopover.style.display = 'block';
+            const popoverWidth = topConfirmPopover.offsetWidth;
+            const left = Math.min(rect.right - popoverWidth, window.innerWidth - popoverWidth - 12);
+            topConfirmPopover.style.left = Math.max(12, left) + 'px';
+            topConfirmPopover.style.top = Math.min(rect.bottom + 8, window.innerHeight - topConfirmPopover.offsetHeight - 12) + 'px';
+        }
+
+        function hideTopConfirm() {
+            pendingConfirmAction = null;
+            topConfirmPopover.style.display = 'none';
+            topConfirmPopover.classList.remove('delete-confirm');
+        }
+
+        function showDeleteConfirm(form, button) {
+            const rect = button.getBoundingClientRect();
+            pendingConfirmAction = { type: 'delete', form: form };
+            topConfirmText.textContent = '确认删除这篇文章吗？删除后无法恢复。';
+            topConfirmPopover.classList.add('delete-confirm');
+            topConfirmPopover.style.display = 'block';
+            const popoverWidth = topConfirmPopover.offsetWidth;
+            const left = Math.min(rect.right - popoverWidth, window.innerWidth - popoverWidth - 12);
+            topConfirmPopover.style.left = Math.max(12, left) + 'px';
+            topConfirmPopover.style.top = Math.min(rect.bottom + 8, window.innerHeight - topConfirmPopover.offsetHeight - 12) + 'px';
+        }
+
+        topConfirmCancel.addEventListener('click', hideTopConfirm);
+        topConfirmSubmit.addEventListener('click', function () {
+            if (!pendingConfirmAction) return;
+            const action = pendingConfirmAction;
+            hideTopConfirm();
+            if (action.type === 'top') {
+                toggleTop(action.cid, action.button);
+            } else {
+                action.form.submit();
+            }
+        });
+
+        document.addEventListener('click', function (event) {
+            if (topConfirmPopover.style.display === 'block' && !topConfirmPopover.contains(event.target) && !event.target.closest('.icon-action-btn.top, .icon-action-btn.delete')) {
+                hideTopConfirm();
+            }
+        });
+
+        function toggleTop(cid, button) {
             fetch('{{adminPath}}/post/toggle-top/' + cid, {
                 method: 'POST'
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
+                    const icon = button.querySelector('i');
                     if (data.isTop) {
                         icon.className = 'fas fa-star';
-                        icon.style.color = '#f1c40f';
+                        button.classList.add('active');
+                        button.title = '取消置顶';
+                        button.setAttribute('aria-label', '取消置顶');
                     } else {
                         icon.className = 'far fa-star';
-                        icon.style.color = '#cbd5e1';
+                        button.classList.remove('active');
+                        button.title = '置顶';
+                        button.setAttribute('aria-label', '置顶');
                     }
                     // 提示用户需要刷新才能看到排序变化
                     console.log('置顶状态已更新');
