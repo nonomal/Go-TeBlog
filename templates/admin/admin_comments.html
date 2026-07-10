@@ -321,6 +321,55 @@
             color: #94a3b8;
         }
 
+        .comments-toolbar {
+            margin-bottom: 20px;
+        }
+
+        .comment-search-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comment-search-input {
+            width: 240px;
+            height: 34px;
+            padding: 0 11px;
+            border: 1px solid #dbe4ea;
+            border-radius: 8px;
+            box-sizing: border-box;
+            color: #334155;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .comment-search-input:focus {
+            border-color: #93c5fd;
+        }
+
+        .comment-search-btn,
+        .comment-search-clear {
+            height: 34px;
+            padding: 0 11px;
+            border: 1px solid #0984e3;
+            border-radius: 8px;
+            background: #0984e3;
+            color: #fff;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            box-sizing: border-box;
+        }
+
+        .comment-search-clear {
+            border-color: #dbe4ea;
+            background: #fff;
+            color: #64748b;
+        }
+
         .reply-modal-mask {
             position: fixed;
             inset: 0;
@@ -477,50 +526,84 @@
             border-color: #0984e3;
         }
 
-        /* Switch styling */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 44px;
-            height: 22px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
+        .approval-checkbox {
+            width: 16px;
+            height: 16px;
+            margin: 0;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #cbd5e1;
-            transition: .4s;
-            border-radius: 22px;
+            appearance: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: #fff;
+            display: inline-grid;
+            place-content: center;
+            transition: all 0.18s ease;
         }
 
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 14px;
-            width: 14px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
+        .approval-checkbox::before {
+            content: "✓";
+            color: #059669;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            transform: scale(0);
+            transition: transform 0.18s ease;
         }
 
-        input:checked+.slider {
-            background-color: #10b981;
+        .approval-checkbox:checked {
+            border-color: #86efac;
+            background: #ecfdf5;
         }
 
-        input:checked+.slider:before {
-            transform: translateX(22px);
+        .approval-checkbox:checked::before {
+            transform: scale(1);
+        }
+
+        .approval-checkbox:focus-visible {
+            outline: 2px solid #a7f3d0;
+            outline-offset: 2px;
+        }
+
+        .comment-confirm-popover {
+            position: fixed;
+            display: none;
+            width: 190px;
+            padding: 12px;
+            border: 1px solid #dbe4ea;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+            z-index: 180;
+            box-sizing: border-box;
+        }
+
+        .comment-confirm-popover p {
+            margin: 0 0 10px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .comment-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .comment-confirm-actions button {
+            border: 1px solid #dbe4ea;
+            border-radius: 6px;
+            padding: 5px 10px;
+            background: #fff;
+            color: #475569;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .comment-confirm-actions .confirm {
+            border-color: #e11d48;
+            background: #e11d48;
+            color: #fff;
         }
     </style>
 </head>
@@ -531,20 +614,27 @@
 
     <div class="content">
         <h2>评论管理</h2>
+        <div class="comments-toolbar">
+            <form class="comment-search-form" action="{{adminPath}}/comments" method="GET">
+                <input class="comment-search-input" type="search" name="q" value="{{.SearchQuery}}" placeholder="搜索评论内容" aria-label="搜索评论内容">
+                <button class="comment-search-btn" type="submit"><i class="fas fa-search"></i> 搜索</button>
+                {{if .SearchQuery}}<a class="comment-search-clear" href="{{adminPath}}/comments">清除</a>{{end}}
+            </form>
+        </div>
         <table>
             <thead>
                 <tr>
                     <th width="100">作者</th>
                     <th>内容</th>
                     <th width="150">日期</th>
-                    <th width="80">状态</th>
+                    <th width="80">审核</th>
                     <th width="120">操作</th>
                 </tr>
             </thead>
             <tbody>
                 {{range .Comments}}
                 <tr>
-                    <td><strong style="color: #2d3436;">{{.Author}}</strong></td>
+                    <td>{{.Author}}</td>
                     <td title="{{.Text}}">
                         <div class="comment-post-meta" title="{{if .PostTitle}}{{.PostTitle}}{{else}}主贴已删除{{end}}">
                             <i class="fas fa-file-alt"></i>
@@ -561,13 +651,10 @@
                         <div class="reply-meta">回复自：{{if .ParentAuthor}}{{.ParentAuthor}}{{else}}原评论{{end}}</div>
                         {{end}}
                     </td>
-                    <td style="color: #b2bec3; font-size: 12px;">{{.Created}}</td>
+                    <td style="font-size: 12px;">{{.Created}}</td>
                     <td>
-                        <label class="switch">
-                            <input type="checkbox" {{if eq .Status "approved" }}checked{{end}}
-                                onchange="toggleStatus({{.Coid}}, this)">
-                            <span class="slider"></span>
-                        </label>
+                        <input class="approval-checkbox" type="checkbox" {{if eq .Status "approved" }}checked{{end}}
+                            onchange="toggleStatus({{.Coid}}, this)" title="切换审核状态" aria-label="切换审核状态">
                     </td>
                     <td>
                         <div class="action-group">
@@ -580,9 +667,8 @@
                                 onclick="openReplyModal({{.Coid}}, '{{js .Author}}')">
                                 <i class="fas fa-reply"></i>
                             </button>
-                            <form action="{{adminPath}}/comment/delete/{{.Coid}}" method="POST"
-                                onsubmit="return confirm('确定删除此评论？')">
-                                <button type="submit" class="icon-action-btn delete" title="删除" aria-label="删除">
+                            <form action="{{adminPath}}/comment/delete/{{.Coid}}" method="POST">
+                                <button type="button" class="icon-action-btn delete" title="删除" aria-label="删除" onclick="showDeleteConfirm(this.form, this)">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
@@ -595,68 +681,54 @@
 
         {{if gt .TotalPages 1}}
         <div class="pager">
-            <!-- 上一页 -->
             {{if .HasPrev}}
-            <a href="?page={{.PrevPage}}">&lt;</a>
+            <a href="?q={{urlquery .SearchQuery}}&page={{.PrevPage}}">&lt;</a>
             {{else}}
             <span class="nav-arrow">&lt;</span>
             {{end}}
 
-            <!-- 页码 -->
             {{$current := .CurrentPage}}
             {{$total := .TotalPages}}
-
             {{if le $total 7}}
-            {{range $i := iterate 1 $total}}
-            {{if eq $i $current}}
-            <span class="page-num active">{{$i}}</span>
+                {{range $p := iterate 1 $total}}
+                    {{if eq $p $current}}
+                    <span class="page-num active">{{$p}}</span>
+                    {{else}}
+                    <a href="?q={{urlquery $.SearchQuery}}&page={{$p}}">{{$p}}</a>
+                    {{end}}
+                {{end}}
             {{else}}
-            <a href="?page={{$i}}">{{$i}}</a>
-            {{end}}
-            {{end}}
-            {{else}}
-            <!-- 总是显示第1页 -->
-            {{if eq $current 1}}
-            <span class="page-num active">1</span>
-            {{else}}
-            <a href="?page=1">1</a>
+                {{if eq $current 1}}
+                <span class="page-num active">1</span>
+                {{else}}
+                <a href="?q={{urlquery $.SearchQuery}}&page=1">1</a>
+                {{end}}
+
+                {{if gt $current 4}}<span class="ellipsis">···</span>{{end}}
+
+                {{range $p := pageRange $current $total}}
+                    {{if eq $p $current}}
+                    <span class="page-num active">{{$p}}</span>
+                    {{else}}
+                    <a href="?q={{urlquery $.SearchQuery}}&page={{$p}}">{{$p}}</a>
+                    {{end}}
+                {{end}}
+
+                {{if lt $current (sub $total 3)}}<span class="ellipsis">···</span>{{end}}
+
+                {{if eq $current $total}}
+                <span class="page-num active">{{$total}}</span>
+                {{else}}
+                <a href="?q={{urlquery $.SearchQuery}}&page={{$total}}">{{$total}}</a>
+                {{end}}
             {{end}}
 
-            <!-- 前省略号 -->
-            {{if gt $current 4}}
-            <span class="ellipsis">···</span>
-            {{end}}
-
-            <!-- 当前页附近的页码 -->
-            {{range $i := pageRange $current $total}}
-            {{if eq $i $current}}
-            <span class="page-num active">{{$i}}</span>
-            {{else}}
-            <a href="?page={{$i}}">{{$i}}</a>
-            {{end}}
-            {{end}}
-
-            <!-- 后省略号 -->
-            {{if lt $current (sub $total 3)}}
-            <span class="ellipsis">···</span>
-            {{end}}
-
-            <!-- 总是显示最后一页 -->
-            {{if eq $current $total}}
-            <span class="page-num active">{{$total}}</span>
-            {{else}}
-            <a href="?page={{$total}}">{{$total}}</a>
-            {{end}}
-            {{end}}
-
-            <!-- 下一页 -->
             {{if .HasNext}}
-            <a href="?page={{.NextPage}}">&gt;</a>
+            <a href="?q={{urlquery .SearchQuery}}&page={{.NextPage}}">&gt;</a>
             {{else}}
             <span class="nav-arrow">&gt;</span>
             {{end}}
 
-            <!-- 前往输入框 -->
             <div class="goto-box">
                 <span>前往</span>
                 <input type="number" id="gotoPageComment" min="1" max="{{.TotalPages}}" value="{{.CurrentPage}}"
@@ -668,10 +740,12 @@
             function gotoPageComment() {
                 var page = parseInt(document.getElementById('gotoPageComment').value);
                 var total = {{.TotalPages}};
-            if (page >= 1 && page <= total) {
-                window.location.href = '?page=' + page;
+                if (page >= 1 && page <= total) {
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('page', page);
+                    window.location.search = params.toString();
+                }
             }
-        }
         </script>
         {{end}}
     </div>
@@ -701,7 +775,54 @@
             </form>
         </div>
     </div>
+    <div id="commentConfirmPopover" class="comment-confirm-popover" role="dialog" aria-modal="false" aria-live="polite">
+        <p>确认删除这条评论吗？删除后无法恢复。</p>
+        <div class="comment-confirm-actions">
+            <button type="button" id="commentConfirmCancel">取消</button>
+            <button type="button" class="confirm" id="commentConfirmSubmit">确认</button>
+        </div>
+    </div>
     <script>
+        const commentConfirmPopover = document.getElementById('commentConfirmPopover');
+        const commentConfirmCancel = document.getElementById('commentConfirmCancel');
+        const commentConfirmSubmit = document.getElementById('commentConfirmSubmit');
+        let pendingDeleteForm = null;
+
+        function showDeleteConfirm(form, button) {
+            const rect = button.getBoundingClientRect();
+            pendingDeleteForm = form;
+            commentConfirmPopover.style.display = 'block';
+            const popoverWidth = commentConfirmPopover.offsetWidth;
+            const left = Math.min(rect.right - popoverWidth, window.innerWidth - popoverWidth - 12);
+            commentConfirmPopover.style.left = Math.max(12, left) + 'px';
+            commentConfirmPopover.style.top = Math.min(rect.bottom + 8, window.innerHeight - commentConfirmPopover.offsetHeight - 12) + 'px';
+        }
+
+        function hideDeleteConfirm() {
+            pendingDeleteForm = null;
+            commentConfirmPopover.style.display = 'none';
+        }
+
+        commentConfirmCancel.addEventListener('click', hideDeleteConfirm);
+        commentConfirmSubmit.addEventListener('click', function () {
+            if (!pendingDeleteForm) return;
+            const form = pendingDeleteForm;
+            hideDeleteConfirm();
+            form.submit();
+        });
+
+        document.addEventListener('click', function (event) {
+            if (commentConfirmPopover.style.display === 'block' && !commentConfirmPopover.contains(event.target) && !event.target.closest('.icon-action-btn.delete')) {
+                hideDeleteConfirm();
+            }
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                hideDeleteConfirm();
+            }
+        });
+
         function toggleStatus(coid, checkbox) {
             const originalChecked = !checkbox.checked;
             fetch('{{adminPath}}/comment/toggle/' + coid, {

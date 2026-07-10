@@ -3635,23 +3635,33 @@ func main() {
 	// Comment Management with Pagination
 	admin.GET("/comments", func(c *gin.Context) {
 		pageStr := c.DefaultQuery("page", "1")
+		searchQuery := strings.TrimSpace(c.Query("q"))
 		page := 1
 		fmt.Sscanf(pageStr, "%d", &page)
 		if page < 1 {
 			page = 1
 		}
-		pageSize := 20
+		pageSize := 10
 		offset := (page - 1) * pageSize
 
-		var total int
-		db.QueryRow("SELECT COUNT(*) FROM typecho_comments").Scan(&total)
+		whereClause := ""
+		queryArgs := []interface{}{}
+		if searchQuery != "" {
+			whereClause = " WHERE c.text LIKE ?"
+			queryArgs = append(queryArgs, "%"+searchQuery+"%")
+		}
 
-		rows, err := db.Query(`
+		var total int
+		db.QueryRow("SELECT COUNT(*) FROM typecho_comments c"+whereClause, queryArgs...).Scan(&total)
+
+		listQuery := `
 			SELECT c.coid, c.cid, c.parent, c.author, c.text, c.status, c.created, COALESCE(p.title, '')
 			FROM typecho_comments c
-			LEFT JOIN typecho_contents p ON p.cid = c.cid AND p.type = 'post'
+			LEFT JOIN typecho_contents p ON p.cid = c.cid AND p.type = 'post'` + whereClause + `
 			ORDER BY c.created DESC, c.coid DESC
-			LIMIT ? OFFSET ?`, pageSize, offset)
+			LIMIT ? OFFSET ?`
+		listArgs := append(queryArgs, pageSize, offset)
+		rows, err := db.Query(listQuery, listArgs...)
 		if err != nil {
 			c.String(500, err.Error())
 			return
@@ -3691,6 +3701,7 @@ func main() {
 		c.HTML(http.StatusOK, "admin_comments.html", gin.H{
 			"Username":    username,
 			"Comments":    comments,
+			"SearchQuery": searchQuery,
 			"Tab":         "comments",
 			"CurrentPage": page,
 			"TotalPages":  totalPages,
