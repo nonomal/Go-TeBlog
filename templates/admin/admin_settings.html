@@ -1002,23 +1002,23 @@
                                 </label>
                             </div>
                             <div class="form-group">
-                                <label>Cloudflare API Token</label>
+                                <label>API Token</label>
                                 <span class="label-desc">Token 或 Global API Key。</span>
                                 <input type="text" name="cfApiToken" value="{{.CfApiToken}}" placeholder="token...">
                             </div>
                             <div class="form-group">
-                                <label>Cloudflare Email (可选)</label>
-                                <span class="label-desc">用于 Email + Key 认证。</span>
-                                <input type="text" name="cfAuthEmail" value="{{.CfAuthEmail}}" placeholder="you@example.com">
+                                <label>Email (可选)</label>
+                                <span class="label-desc">用于 Email + Global API Key 认证。</span>
+                                <input type="text" name="cfAuthEmail" value="{{.CfAuthEmail}}" placeholder="你的cloudflare帐号email">
                             </div>
                             <div class="form-group">
-                                <label>Cloudflare Zone ID</label>
+                                <label>Zone ID</label>
                                 <span class="label-desc">在 Cloudflare 后台概述页右下角可查询。</span>
                                 <input type="text" name="cfZoneID" value="{{.CfZoneID}}" placeholder="zone id...">
                             </div>
                             <div class="form-group full-width">
-                                <label>Cloudflare 连通性检测</label>
-                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用当前表单参数测试 Cloudflare 配置是否可调用。{{end}}</span>
+                                <label>连通性检测</label>
+                                <span class="label-desc">{{if eq .UserGroup "visitor"}}访客模式不可用。{{else}}可选操作，使用当前表单参数测试配置是否可调用。{{end}}</span>
                                 <button type="button" class="btn-secondary" id="cfTestBtn" {{if eq .UserGroup "visitor"}}disabled{{end}}>
                                     <i class="fas fa-cloud" style="margin-right: 8px;"></i>检测
                                 </button>

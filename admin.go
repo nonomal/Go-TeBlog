@@ -1895,19 +1895,24 @@ func main() {
 
 		if err == nil && checkTypechoHash(password, storedHash) {
 			totp := getTOTPStatus(db, username, getTOTPIssuer(db))
-			if adminTOTPAllowed(username, userGroup) && totp.Enabled && !verifyTOTPCode(totp.Secret, c.PostForm("totp_code"), time.Now()) {
+			totpCode := c.PostForm("totp_code")
+			if adminTOTPAllowed(username, userGroup) && totp.Enabled && !verifyTOTPCode(totp.Secret, totpCode, time.Now()) {
+				message := "请输入 Google 验证器中的 6 位验证码。"
+				if normalizeTOTPCode(totpCode) != "" {
+					message = "验证码错误，请重新输入。"
+				}
 				if wantsJSON {
 					c.JSON(http.StatusUnauthorized, gin.H{
 						"success":           false,
 						"twoFactorRequired": true,
-						"message":           "请输入 Google 验证器中的 6 位验证码。",
+						"message":           message,
 					})
 					return
 				}
 				c.HTML(http.StatusUnauthorized, "admin_login.html", gin.H{
 					"AdminPath":         adminPath,
 					"Username":          username,
-					"InfoMessage":       "请输入 Google 验证器中的 6 位验证码。",
+					"InfoMessage":       message,
 					"TwoFactorRequired": true,
 				})
 				return
