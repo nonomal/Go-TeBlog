@@ -1217,6 +1217,40 @@
         </div>
     </div>
     <script>
+        function showPageToast(message) {
+            let toast = document.getElementById('pageToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'pageToast';
+                toast.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:3000;max-width:360px;padding:12px 16px;border-radius:8px;background:#fff1f2;color:#be123c;border:1px solid #fecdd3;box-shadow:0 12px 28px rgba(15,23,42,.16);font-size:14px;';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = message;
+            toast.style.display = 'block';
+            clearTimeout(toast.hideTimer);
+            toast.hideTimer = setTimeout(function () { toast.style.display = 'none'; }, 3500);
+        }
+
+        function showRestartConfirm(button, message) {
+            return new Promise(function (resolve) {
+                const popover = document.createElement('div');
+                popover.style.cssText = 'position:fixed;width:220px;padding:12px;border:1px solid #dbe4ea;border-radius:10px;background:#fff;box-shadow:0 12px 28px rgba(15,23,42,.16);z-index:180;box-sizing:border-box;';
+                popover.innerHTML = '<p style="margin:0 0 10px;color:#334155;font-size:13px;line-height:1.5;"></p><div style="display:flex;justify-content:flex-end;gap:6px;"><button type="button">取消</button><button type="button">确认</button></div>';
+                popover.querySelector('p').textContent = message;
+                const buttons = popover.querySelectorAll('button');
+                buttons.forEach(function (item) { item.style.cssText = 'padding:5px 9px;border:1px solid #dbe4ea;border-radius:6px;background:#fff;color:#475569;cursor:pointer;font-size:12px;'; });
+                buttons[1].style.cssText += 'border-color:#e11d48;background:#e11d48;color:#fff;';
+                const rect = button.getBoundingClientRect();
+                document.body.appendChild(popover);
+                popover.style.left = Math.max(12, Math.min(rect.right - popover.offsetWidth, window.innerWidth - popover.offsetWidth - 12)) + 'px';
+                popover.style.top = Math.min(rect.bottom + 8, window.innerHeight - popover.offsetHeight - 12) + 'px';
+                function close(result) { popover.remove(); document.removeEventListener('keydown', onKey); resolve(result); }
+                function onKey(event) { if (event.key === 'Escape') close(false); }
+                buttons[0].addEventListener('click', function () { close(false); });
+                buttons[1].addEventListener('click', function () { close(true); });
+                document.addEventListener('keydown', onKey);
+            });
+        }
         const visitorTrendLabels = {{.VisitorTrendLabels}};
         const humanVisitorTrend = {{.HumanVisitorTrend}};
         const botVisitorTrend = {{.BotVisitorTrend}};
@@ -1625,7 +1659,7 @@
             } catch (error) {
                 button.disabled = false;
                 button.textContent = '解除黑名单';
-                alert(error.message || '解除黑名单失败');
+                showPageToast(error.message || '解除黑名单失败');
             }
         }
 
@@ -1756,11 +1790,11 @@
             });
         }
 
-        document.getElementById('btn-restart-services').addEventListener('click', function () {
+        document.getElementById('btn-restart-services').addEventListener('click', async function () {
             const frontendServiceName = '{{.FrontendServiceName}}';
             const adminServiceName = '{{.AdminServiceName}}';
 
-            if (!confirm(`确定要重启 ${frontendServiceName} 和 ${adminServiceName} 服务吗？重启期间后台和前台将暂时无法访问。`)) {
+            if (!await showRestartConfirm(this, `确认重启 ${frontendServiceName} 和 ${adminServiceName} 服务吗？`)) {
                 return;
             }
 
@@ -1794,20 +1828,20 @@
                         btn.style.color = '#15803d';
                         btn.style.borderColor = '#bbf7d0';
 
-                        alert(data.message);
+                        showPageToast(data.message);
                         // 10秒后尝试刷新
                         setTimeout(() => {
                             window.location.reload();
                         }, 10000);
                     } else {
-                        alert('错误: ' + data.message);
+                        showPageToast('错误: ' + data.message);
                         btn.innerHTML = originalContent;
                         btn.style.pointerEvents = 'auto';
                     }
                 })
                 .catch(error => {
                     if (error.message.includes('模式') || error.message.includes('权限')) {
-                        alert(error.message);
+                        showPageToast(error.message);
                         btn.innerHTML = originalContent;
                         btn.style.pointerEvents = 'auto';
                         return;

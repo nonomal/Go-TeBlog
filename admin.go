@@ -4395,6 +4395,36 @@ func main() {
 		c.Redirect(http.StatusFound, adminPath+"/users")
 	})
 
+	admin.POST("/user/edit/:uid/2fa/reset", writeProtectMiddleware, func(c *gin.Context) {
+		username, _ := c.Get("username")
+		currentUsername, _ := username.(string)
+		group, _ := c.Get("userGroup")
+		currentGroup, _ := group.(string)
+		if currentGroup != "administrator" {
+			c.String(http.StatusForbidden, "Only administrators can reset two-factor authentication")
+			return
+		}
+
+		uid := c.Param("uid")
+		var targetUsername string
+		if err := db.QueryRow("SELECT name FROM typecho_users WHERE uid=?", uid).Scan(&targetUsername); err != nil {
+			c.String(http.StatusNotFound, "User not found")
+			return
+		}
+		if targetUsername == currentUsername {
+			c.String(http.StatusForbidden, "You cannot reset your own two-factor authentication")
+			return
+		}
+
+		if _, err := db.Exec("DELETE FROM go_totp_settings WHERE username=?", targetUsername); err != nil {
+			log.Printf("Failed to reset TOTP settings for user %s: %v", targetUsername, err)
+			c.String(http.StatusInternalServerError, "Failed to reset two-factor authentication")
+			return
+		}
+
+		c.Redirect(http.StatusFound, adminPath+"/users")
+	})
+
 	admin.POST("/user/delete/:uid", writeProtectMiddleware, func(c *gin.Context) {
 		uid := c.Param("uid")
 

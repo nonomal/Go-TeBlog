@@ -433,6 +433,48 @@
             display: inline;
         }
 
+        .attachment-confirm-popover {
+            position: fixed;
+            display: none;
+            width: 190px;
+            padding: 12px;
+            border: 1px solid #dbe4ea;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+            z-index: 180;
+            box-sizing: border-box;
+        }
+
+        .attachment-confirm-popover p {
+            margin: 0 0 10px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .attachment-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+
+        .attachment-confirm-actions button {
+            padding: 5px 9px;
+            border: 1px solid #dbe4ea;
+            border-radius: 6px;
+            background: #fff;
+            color: #475569;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .attachment-confirm-actions .confirm {
+            border-color: #e11d48;
+            background: #e11d48;
+            color: #fff;
+        }
+
         .empty {
             background: #fff;
             border: 1px solid #e2e8f0;
@@ -627,7 +669,7 @@
                                     <div class="attachment-time">{{.Created}}</div>
                                 </div>
                                 <div class="attachment-actions">
-                                    <form action="{{adminPath}}/attachment/delete/{{.Cid}}?back=attachments" method="POST" class="inline-form" onsubmit="return confirm('确定要删除此附件吗？删除后会自动移除文章中的引用。')">
+                                    <form action="{{adminPath}}/attachment/delete/{{.Cid}}?back=attachments" method="POST" class="inline-form attachment-delete-form">
                                         <button type="submit" class="icon-action-btn" title="删除" aria-label="删除">
                                             <i class="fas fa-trash"></i>
                                         </button>
@@ -714,6 +756,13 @@
             <img id="hoverPreviewImg" src="" alt="preview">
         </div>
     </div>
+    <div id="attachmentConfirmPopover" class="attachment-confirm-popover" role="dialog" aria-modal="false" aria-live="polite">
+        <p>确认删除此附件吗？删除后会自动移除文章中的引用。</p>
+        <div class="attachment-confirm-actions">
+            <button type="button" id="attachmentConfirmCancel">取消</button>
+            <button type="button" class="confirm" id="attachmentConfirmSubmit">确认</button>
+        </div>
+    </div>
 
     <script>
         (function () {
@@ -798,6 +847,45 @@ document.addEventListener('DOMContentLoaded', function () {
       userMenu.classList.remove('open');
     });
   }
+
+  const attachmentConfirmPopover = document.getElementById('attachmentConfirmPopover');
+  const attachmentConfirmCancel = document.getElementById('attachmentConfirmCancel');
+  const attachmentConfirmSubmit = document.getElementById('attachmentConfirmSubmit');
+  let pendingDeleteForm = null;
+
+  function hideAttachmentConfirm() {
+    pendingDeleteForm = null;
+    attachmentConfirmPopover.style.display = 'none';
+  }
+
+  document.querySelectorAll('.attachment-delete-form').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const button = form.querySelector('.icon-action-btn');
+      const rect = button.getBoundingClientRect();
+      pendingDeleteForm = form;
+      attachmentConfirmPopover.style.display = 'block';
+      const popoverWidth = attachmentConfirmPopover.offsetWidth;
+      attachmentConfirmPopover.style.left = Math.max(12, Math.min(rect.right - popoverWidth, window.innerWidth - popoverWidth - 12)) + 'px';
+      attachmentConfirmPopover.style.top = Math.min(rect.bottom + 8, window.innerHeight - attachmentConfirmPopover.offsetHeight - 12) + 'px';
+    });
+  });
+
+  attachmentConfirmCancel.addEventListener('click', hideAttachmentConfirm);
+  attachmentConfirmSubmit.addEventListener('click', function () {
+    if (!pendingDeleteForm) return;
+    const form = pendingDeleteForm;
+    hideAttachmentConfirm();
+    form.submit();
+  });
+  document.addEventListener('click', function (event) {
+    if (attachmentConfirmPopover.style.display === 'block' && !attachmentConfirmPopover.contains(event.target) && !event.target.closest('.attachment-delete-form')) {
+      hideAttachmentConfirm();
+    }
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') hideAttachmentConfirm();
+  });
 });
 </script>
 </body>

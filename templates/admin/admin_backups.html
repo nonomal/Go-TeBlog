@@ -873,6 +873,19 @@
     </div>
     <script>
         (() => {
+            const showPageToast = (message) => {
+                let toast = document.getElementById('pageToast');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.id = 'pageToast';
+                    toast.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:3000;max-width:360px;padding:12px 16px;border-radius:8px;background:#fff1f2;color:#be123c;border:1px solid #fecdd3;box-shadow:0 12px 28px rgba(15,23,42,.16);font-size:14px;';
+                    document.body.appendChild(toast);
+                }
+                toast.textContent = message;
+                toast.style.display = 'block';
+                clearTimeout(toast.hideTimer);
+                toast.hideTimer = setTimeout(() => { toast.style.display = 'none'; }, 3500);
+            };
             const refreshBtn = document.getElementById('refreshBackupPanelBtn');
             if (!refreshBtn) return;
             const vacuumForm = document.getElementById('vacuumDatabaseForm');
@@ -1030,7 +1043,7 @@
                     syncActionButtons(doc);
                 } catch (e) {
                     if (showError) {
-                        alert('刷新失败，请稍后重试。');
+                        showPageToast('刷新失败，请稍后重试。');
                     }
                 } finally {
                     if (icon) icon.classList.remove('fa-spin');
