@@ -234,14 +234,18 @@ sudo bash build.sh
 
 ### 前台界面
 ![前台展示](screenshot/9.webp)
+![文章详情](screenshot/13.webp)
 
 ### 后台管理界面
 ![后台管理 - 仪表盘](screenshot/1.webp)
 ![后台管理 - 文章列表](screenshot/2.webp)
-![后台管理 - 文章编辑](screenshot/3.webp)
-![后台管理 - 分类管理](screenshot/4.webp)
-![后台管理 - 评论管理](screenshot/5.webp)
-![后台管理 - 系统设置](screenshot/6.webp)
+![后台管理 - 文章编辑（所见即所得）](screenshot/11.webp)
+![后台管理 - 分类管理](screenshot/3.webp)
+![后台管理 - 评论管理](screenshot/4.webp)
+![后台管理 - 附件管理](screenshot/5.webp)
+![后台管理 - 基础设置](screenshot/6.webp)
+![后台管理 - 皮肤设置](screenshot/12.webp)
+![后台管理 - AI 系统参数](screenshot/10.webp)
+![后台管理 - 访问防护（Cloudflare 五秒盾）](screenshot/14.webp)
 ![后台管理 - 用户管理](screenshot/7.webp)
 ![后台管理 - 数据库备份](screenshot/8.webp)
-![后台管理 - AI 校稿设置](screenshot/10.png)
