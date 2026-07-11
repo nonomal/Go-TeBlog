@@ -234,7 +234,6 @@ sudo bash build.sh
 
 ### 前台界面
 ![前台展示](screenshot/9.webp)
-![文章详情](screenshot/13.webp)
 
 ### 后台管理界面
 ![后台管理 - 仪表盘](screenshot/1.webp)
