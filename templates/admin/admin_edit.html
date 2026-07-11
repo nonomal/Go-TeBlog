@@ -310,6 +310,229 @@
             color: #dc2626;
         }
 
+        .ai-chat-mask {
+            position: fixed;
+            inset: 0;
+            display: none;
+            z-index: 905;
+            background: rgba(15, 23, 42, 0.34);
+        }
+
+        .ai-chat-layer {
+            position: fixed;
+            right: 32px;
+            top: 16px;
+            display: none;
+            z-index: 906;
+            width: min(680px, calc(100vw - 32px));
+            height: min(700px, calc(100vh - 32px));
+            transform: none;
+            border: 1px solid #dbe4ea;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+            overflow: hidden;
+        }
+
+        .ai-chat-layer.minimized {
+            width: min(280px, calc(100vw - 32px));
+            height: 48px;
+        }
+
+        .ai-chat-layer.minimized .ai-chat-body {
+            display: none;
+        }
+
+        .ai-chat-header {
+            height: 48px;
+            padding: 0 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #334155;
+            font-weight: 600;
+            cursor: move;
+            user-select: none;
+        }
+
+        .ai-chat-header-title i {
+            margin-right: 7px;
+            color: #0984e3;
+        }
+
+        .ai-chat-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ai-chat-clear,
+        .ai-chat-minimize,
+        .ai-chat-close {
+            height: 30px;
+            padding: 0 10px;
+            border: 1px solid #dbe4ea;
+            border-radius: 4px;
+            background: #fff;
+            color: #64748b;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .ai-chat-minimize,
+        .ai-chat-close {
+            width: 30px;
+            padding: 0;
+        }
+
+        .ai-chat-clear:hover,
+        .ai-chat-minimize:hover,
+        .ai-chat-close:hover {
+            border-color: #0984e3;
+            color: #0984e3;
+            background: #f0f7ff;
+        }
+
+        .ai-chat-body {
+            height: calc(100% - 49px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-chat-notice {
+            margin: 12px 16px 0;
+            padding: 8px 10px;
+            border-radius: 4px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .ai-chat-result {
+            flex: 0 0 150px;
+            min-height: 0;
+            margin: 12px 16px 0;
+            border: 1px solid #bfdbfe;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .ai-chat-result-title {
+            padding: 7px 10px;
+            border-bottom: 1px solid #dbeafe;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .ai-chat-result-content {
+            height: calc(100% - 32px);
+            padding: 9px 10px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            color: #1e293b;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .ai-chat-messages {
+            flex: 1;
+            min-height: 0;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .ai-chat-empty {
+            margin: 28px 12px;
+            color: #94a3b8;
+            text-align: center;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        .ai-chat-message {
+            margin-bottom: 14px;
+        }
+
+        .ai-chat-message-label {
+            margin-bottom: 5px;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .ai-chat-message-content {
+            max-width: 92%;
+            padding: 10px 12px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            color: #1e293b;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .ai-chat-message.user .ai-chat-message-content {
+            margin-left: auto;
+            background: #e0f2fe;
+            color: #075985;
+        }
+
+        .ai-chat-message.assistant .ai-chat-message-content {
+            border: 1px solid #e2e8f0;
+            background: #fff;
+        }
+
+        .ai-chat-input-wrap {
+            display: flex;
+            gap: 10px;
+            padding: 8px 16px 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .ai-chat-input {
+            flex: 1;
+            min-height: 36px;
+            max-height: 72px;
+            resize: vertical;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            box-sizing: border-box;
+            color: #1e293b;
+            font: inherit;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .ai-chat-input:focus {
+            outline: none;
+            border-color: #0984e3;
+            box-shadow: 0 0 0 2px rgba(9, 132, 227, 0.12);
+        }
+
+        .ai-chat-send {
+            align-self: flex-end;
+            height: 36px;
+            padding: 0 14px;
+            border: 1px solid #0984e3;
+            border-radius: 4px;
+            background: #0984e3;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .ai-chat-send:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
         .preview-layer-mask {
             position: fixed;
             inset: 0;
@@ -674,6 +897,9 @@
                             <span class="action-tip" title="{{if not .AiProofreadEnabled}}请先到系统设置中配置 AI 系统：AI API URL、AI Model 和 AI API Key{{else}}使用 AI 整理当前编辑框内容{{end}}">
                                 <button type="button" class="btn-ai-proofread" id="aiProofreadBtn" title="校稿" aria-label="校稿" {{if not .AiProofreadEnabled}}disabled{{end}}><i class="fas fa-spell-check"></i></button>
                             </span>
+                            <span class="action-tip" title="{{if not .AiProofreadEnabled}}请先到系统设置中配置 AI 系统：AI API URL、AI Model 和 AI API Key{{else}}与 AI 对话，生成或修改正文{{end}}">
+                                <button type="button" id="aiChatBtn" title="AI 助手" aria-label="AI 助手" {{if not .AiProofreadEnabled}}disabled{{end}}>AI</button>
+                            </span>
                             <button type="button" class="attachment-trigger" id="attachmentTrigger" title="附件管理" aria-label="附件管理" aria-expanded="false">
                                 <i class="fas fa-paperclip"></i>
                             </button>
@@ -723,6 +949,31 @@
             </ul>
         </div>
     </div>
+    <div id="aiChatMask" class="ai-chat-mask"></div>
+    <div id="aiChatLayer" class="ai-chat-layer" role="dialog" aria-modal="false" aria-labelledby="aiChatTitle">
+        <div class="ai-chat-header" id="aiChatHeader">
+            <span class="ai-chat-header-title" id="aiChatTitle"><i class="fas fa-comments"></i>AI 助手</span>
+            <div class="ai-chat-header-actions">
+                <button type="button" class="ai-chat-clear" id="aiChatClear">新对话</button>
+                <button type="button" class="ai-chat-minimize" id="aiChatMinimize" title="最小化" aria-label="最小化" aria-expanded="true"><i class="fas fa-minus"></i></button>
+                <button type="button" class="ai-chat-close" id="aiChatClose" title="关闭" aria-label="关闭"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="ai-chat-body">
+            <div class="ai-chat-notice">直接告诉 AI 你希望怎样修改文章。</div>
+            <div class="ai-chat-result">
+                <div class="ai-chat-result-title">修改后全文</div>
+                <div class="ai-chat-result-content" id="aiChatResult"></div>
+            </div>
+            <div class="ai-chat-messages" id="aiChatMessages">
+                <div class="ai-chat-empty">例如：帮我为这篇文章写一个开头、将第二段改得更简洁，或把第三张图去掉。</div>
+            </div>
+            <div class="ai-chat-input-wrap">
+                <textarea class="ai-chat-input" id="aiChatInput" placeholder="输入你希望 AI 完成的内容，Enter 发送，Shift + Enter 换行"></textarea>
+                <button type="button" class="ai-chat-send" id="aiChatSend">发送</button>
+            </div>
+        </div>
+    </div>
     <div class="attachment-preview" id="attachmentPreview"><img alt="附件预览"></div>
     <div class="attachment-delete-mask" id="attachmentDeleteMask"></div>
     <div class="attachment-delete-layer" id="attachmentDeleteLayer" role="dialog" aria-modal="true" aria-labelledby="attachmentDeleteTitle">
@@ -760,11 +1011,27 @@
         const attachmentDeleteConfirm = document.getElementById('attachmentDeleteConfirm');
         const aiProofreadBtn = document.getElementById('aiProofreadBtn');
         const aiProofreadStatus = document.getElementById('aiProofreadStatus');
+        const aiChatBtn = document.getElementById('aiChatBtn');
+        const aiChatMask = document.getElementById('aiChatMask');
+        const aiChatLayer = document.getElementById('aiChatLayer');
+        const aiChatHeader = document.getElementById('aiChatHeader');
+        const aiChatClose = document.getElementById('aiChatClose');
+        const aiChatClear = document.getElementById('aiChatClear');
+        const aiChatMinimize = document.getElementById('aiChatMinimize');
+        const aiChatMessages = document.getElementById('aiChatMessages');
+        const aiChatResult = document.getElementById('aiChatResult');
+        const aiChatInput = document.getElementById('aiChatInput');
+        const aiChatSend = document.getElementById('aiChatSend');
         let previewTimer = null;
         let previewRequestId = 0;
         let previewOpen = false;
         let pendingAttachmentDelete = null;
+        let aiChatHistory = [];
+        let aiChatSending = false;
+        let aiChatDragOffset = null;
         let editor;
+
+        const aiChatHistoryMaxChars = 60000;
 
         function getEditorValue() {
             return editor ? editor.getValue() : editorSource.value;
@@ -808,6 +1075,149 @@
             attachmentTrigger.setAttribute('aria-expanded', 'false');
         }
 
+        function openAIChatLayer() {
+            aiChatLayer.classList.remove('minimized');
+            aiChatMinimize.title = '最小化';
+            aiChatMinimize.setAttribute('aria-label', '最小化');
+            aiChatMinimize.setAttribute('aria-expanded', 'true');
+            aiChatMinimize.innerHTML = '<i class="fas fa-minus"></i>';
+            aiChatLayer.style.display = 'block';
+            aiChatMask.style.display = 'none';
+            aiChatInput.focus();
+        }
+
+        function closeAIChatLayer() {
+            aiChatLayer.style.display = 'none';
+            aiChatMask.style.display = 'none';
+        }
+
+        function keepAIChatInViewport() {
+            const rect = aiChatLayer.getBoundingClientRect();
+            const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - rect.width - 8));
+            const top = Math.min(Math.max(8, rect.top), Math.max(8, window.innerHeight - rect.height - 8));
+            aiChatLayer.style.left = left + 'px';
+            aiChatLayer.style.top = top + 'px';
+            aiChatLayer.style.transform = 'none';
+        }
+
+        function toggleAIChatMinimized() {
+            const minimized = aiChatLayer.classList.toggle('minimized');
+            aiChatMask.style.display = 'none';
+            aiChatMinimize.title = minimized ? '展开' : '最小化';
+            aiChatMinimize.setAttribute('aria-label', minimized ? '展开' : '最小化');
+            aiChatMinimize.setAttribute('aria-expanded', minimized ? 'false' : 'true');
+            aiChatMinimize.innerHTML = minimized ? '<i class="fas fa-window-maximize"></i>' : '<i class="fas fa-minus"></i>';
+            keepAIChatInViewport();
+            if (!minimized) aiChatInput.focus();
+        }
+
+        function startAIChatDrag(event) {
+            if ((event.pointerType === 'mouse' && event.button !== 0) || event.target.closest('button')) return;
+            const rect = aiChatLayer.getBoundingClientRect();
+            aiChatLayer.style.left = rect.left + 'px';
+            aiChatLayer.style.top = rect.top + 'px';
+            aiChatLayer.style.transform = 'none';
+            aiChatDragOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+            aiChatHeader.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        }
+
+        function moveAIChatDrag(event) {
+            if (!aiChatDragOffset) return;
+            const rect = aiChatLayer.getBoundingClientRect();
+            const left = Math.min(Math.max(8, event.clientX - aiChatDragOffset.x), Math.max(8, window.innerWidth - rect.width - 8));
+            const top = Math.min(Math.max(8, event.clientY - aiChatDragOffset.y), Math.max(8, window.innerHeight - rect.height - 8));
+            aiChatLayer.style.left = left + 'px';
+            aiChatLayer.style.top = top + 'px';
+        }
+
+        function endAIChatDrag(event) {
+            if (!aiChatDragOffset) return;
+            aiChatDragOffset = null;
+            if (aiChatHeader.hasPointerCapture(event.pointerId)) aiChatHeader.releasePointerCapture(event.pointerId);
+        }
+
+        function renderAIChatMessages() {
+            aiChatMessages.innerHTML = '';
+            const userMessages = aiChatHistory.filter(item => item.role === 'user');
+            if (!userMessages.length) {
+                const empty = document.createElement('div');
+                empty.className = 'ai-chat-empty';
+                empty.textContent = '例如：帮我为这篇文章写一个开头、将第二段改得更简洁，或把第三张图去掉。';
+                aiChatMessages.appendChild(empty);
+                return;
+            }
+            userMessages.forEach(item => {
+                const message = document.createElement('div');
+                message.className = 'ai-chat-message ' + item.role;
+                const content = document.createElement('div');
+                content.className = 'ai-chat-message-content';
+                content.textContent = item.content;
+                message.appendChild(content);
+                aiChatMessages.appendChild(message);
+            });
+            aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+        }
+
+        function getAIChatRequestHistory() {
+            let chars = 0;
+            const selected = [];
+            for (let i = aiChatHistory.length - 1; i >= 0; i--) {
+                const item = aiChatHistory[i];
+                const itemChars = Array.from(item.content).length;
+                if (chars + itemChars > aiChatHistoryMaxChars && selected.length) break;
+                chars += itemChars;
+                selected.unshift(item);
+            }
+            return selected;
+        }
+
+        function sendAIChatMessage() {
+            const content = aiChatInput.value.trim();
+            if (!content || aiChatSending) return;
+            aiChatHistory.push({ role: 'user', content });
+            aiChatInput.value = '';
+            aiChatSending = true;
+            aiChatSend.disabled = true;
+            aiChatSend.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            renderAIChatMessages();
+
+            const formData = new FormData();
+            formData.append('title', postTitle.value);
+            formData.append('text', getEditorValue());
+            formData.append('messages', JSON.stringify(getAIChatRequestHistory()));
+            fetch('{{adminPath}}/post/ai-chat', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+                .then(async response => {
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) throw new Error(data.message || 'AI 对话失败');
+                    return data;
+                })
+                .then(data => {
+                    const responseText = data.message || '';
+                    aiChatHistory.push({ role: 'assistant', content: responseText });
+                    aiChatResult.textContent = responseText;
+                    setEditorValue(responseText);
+                    scheduleEditorPreview();
+                })
+                .catch(err => {
+                    aiChatHistory.push({ role: 'assistant', content: '请求失败：' + (err.message || 'AI 对话失败') });
+                })
+                .finally(() => {
+                    aiChatSending = false;
+                    aiChatSend.disabled = false;
+                    aiChatSend.textContent = '发送';
+                    renderAIChatMessages();
+                    aiChatInput.focus();
+                });
+        }
+
         function scheduleEditorPreview() {
             if (!previewOpen) return;
             clearTimeout(previewTimer);
@@ -845,6 +1255,28 @@
         attachmentTrigger.addEventListener('click', openAttachmentLayer);
         attachmentLayerClose.addEventListener('click', closeAttachmentLayer);
         attachmentLayerMask.addEventListener('click', closeAttachmentLayer);
+        if (aiChatBtn && !aiChatBtn.disabled) aiChatBtn.addEventListener('click', openAIChatLayer);
+        aiChatClose.addEventListener('click', closeAIChatLayer);
+        aiChatMinimize.addEventListener('click', toggleAIChatMinimized);
+        aiChatHeader.addEventListener('pointerdown', startAIChatDrag);
+        aiChatHeader.addEventListener('pointermove', moveAIChatDrag);
+        aiChatHeader.addEventListener('pointerup', endAIChatDrag);
+        aiChatHeader.addEventListener('pointercancel', endAIChatDrag);
+        aiChatMask.addEventListener('click', closeAIChatLayer);
+        aiChatClear.addEventListener('click', function () {
+            if (aiChatSending) return;
+            aiChatHistory = [];
+            aiChatResult.textContent = '';
+            renderAIChatMessages();
+            aiChatInput.focus();
+        });
+        aiChatSend.addEventListener('click', sendAIChatMessage);
+        aiChatInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendAIChatMessage();
+            }
+        });
         attachmentDeleteCancel.addEventListener('click', closeAttachmentDeleteLayer);
         attachmentDeleteMask.addEventListener('click', closeAttachmentDeleteLayer);
         attachmentDeleteConfirm.addEventListener('click', confirmAttachmentDelete);
@@ -909,6 +1341,7 @@
                 if (previewOpen) closePreviewLayer();
                 if (attachmentLayer.style.display === 'block') closeAttachmentLayer();
                 if (attachmentDeleteLayer.style.display === 'block') closeAttachmentDeleteLayer();
+                if (aiChatLayer.style.display === 'block') closeAIChatLayer();
             }
         });
 
