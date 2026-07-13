@@ -839,7 +839,7 @@ func beaconMiddleware(adminPath string) gin.HandlerFunc {
 
 		contentType := w.Header().Get("Content-Type")
 		if strings.Contains(contentType, "text/html") && w.Status() == http.StatusOK {
-			script := `<script>(function(){var _0x=['/a','pi','/sta','ts/b','eaco','n'];var _0y=_0x.join('');var b=new Image();b.src=_0y+'?path='+encodeURIComponent(window.location.pathname)+'&t='+(new Date()).getTime();})();</script>`
+			script := `<script>(function(){var _0x=['/a','pi','/sta','ts/b','eaco','n'];var _0y=_0x.join('');var b=new Image();b.src=_0y+'?path='+encodeURIComponent(window.location.pathname)+'&t='+(new Date()).getTime();document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('.post-content a[href]').forEach(function(a){var href=a.getAttribute('href');if(!href){return;}var u;try{u=new URL(href,window.location.href);}catch(e){return;}if(u.protocol!=='http:'&&u.protocol!=='https:'){return;}if(u.origin===window.location.origin){a.removeAttribute('target');return;}a.target='_blank';var rel=(a.getAttribute('rel')||'').split(/\s+/);if(rel.indexOf('noopener')===-1){rel.push('noopener');}if(rel.indexOf('noreferrer')===-1){rel.push('noreferrer');}a.setAttribute('rel',rel.filter(Boolean).join(' '));});});})();</script>`
 			content := w.body.String()
 			lowerContent := strings.ToLower(content)
 			// 优先在 <head> 内注入；没有 <head> 就紧接 <html> 之后；两者都没有则插入 </body> 前
