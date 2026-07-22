@@ -427,54 +427,42 @@
             border: 1px solid #bbfcce;
         }
 
-        /* Switch toggle styles */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
+        .publish-checkbox {
+            width: 16px;
+            height: 16px;
+            margin: 0;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #cbd5e1;
-            transition: .4s;
-            border-radius: 24px;
+            appearance: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: #fff;
+            display: inline-grid;
+            place-content: center;
+            transition: all 0.18s ease;
         }
 
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
+        .publish-checkbox::before {
+            content: "✓";
+            color: #059669;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            transform: scale(0);
+            transition: transform 0.18s ease;
         }
 
-        input:checked+.slider {
-            background-color: #475569;
+        .publish-checkbox:checked {
+            border-color: #86efac;
+            background: #ecfdf5;
         }
 
-        input:focus+.slider {
-            box-shadow: 0 0 1px #475569;
+        .publish-checkbox:checked::before {
+            transform: scale(1);
         }
 
-        input:checked+.slider:before {
-            transform: translateX(26px);
+        .publish-checkbox:focus-visible {
+            outline: 2px solid #a7f3d0;
+            outline-offset: 2px;
         }
 
         .result-modal {
@@ -690,18 +678,12 @@
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>显示日期归档</label>
                                 <span class="label-desc">首页侧边栏“最近评论”下方显示归档索引。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="showDateArchives" value="1" {{if eq .ShowDateArchives "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="showDateArchives" value="1" {{if eq .ShowDateArchives "1"}}checked{{end}}>
                             </div>
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>启用 RSS</label>
                                 <span class="label-desc">开启后提供 /blog/rss.xml 订阅源，并在首页显示 RSS 入口。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="rssEnabled" value="1" {{if eq .RSSEnabled "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="rssEnabled" value="1" {{if eq .RSSEnabled "1"}}checked{{end}}>
                             </div>
                             <div class="form-group">
                                 <label>归档显示条数</label>
@@ -832,34 +814,22 @@
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>允许新评论</label>
                                 <span class="label-desc">关闭后，全站将不再接收新评论。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="commentsEnabled" value="1" {{if eq .CommentsEnabled "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="commentsEnabled" value="1" {{if eq .CommentsEnabled "1"}}checked{{end}}>
                             </div>
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>评论需审核</label>
                                 <span class="label-desc">开启后访客评论需批准。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="commentAudit" value="1" {{if eq .CommentAudit "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="commentAudit" value="1" {{if eq .CommentAudit "1"}}checked{{end}}>
                             </div>
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>AI 检测安全导向</label>
                                 <span class="label-desc">开: API失败即拒绝；关: API失败按通过。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="commentFailClosed" value="1" {{if eq .CommentFailClosed "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="commentFailClosed" value="1" {{if eq .CommentFailClosed "1"}}checked{{end}}>
                             </div>
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>AI 评论检测</label>
                                 <span class="label-desc">开启后，评论提交时才会调用 AI 接口进行检测。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="commentAiDetection" value="1" {{if eq .CommentAiDetection "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="commentAiDetection" value="1" {{if eq .CommentAiDetection "1"}}checked{{end}}>
                             </div>
                             <div class="form-group">
                                 <label>IP 频率限制 (次/分钟)</label>
@@ -987,10 +957,7 @@
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>自动拉黑高频 IP</label>
                                 <span class="label-desc">触发后拉黑命中 >= max(阈值/10, 30) 的前 10 个 IP。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="cfShieldAutoBlockIP" value="1" {{if eq .CfShieldAutoBlockIP "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="cfShieldAutoBlockIP" value="1" {{if eq .CfShieldAutoBlockIP "1"}}checked{{end}}>
                             </div>
                             <div class="form-group">
                                 <label>API Token</label>
@@ -1065,10 +1032,7 @@
                             <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
                                 <label>强制 Path-Style</label>
                                 <span class="label-desc">部分 S3 兼容服务需要使用 <code>endpoint/bucket/key</code> 形式访问。</span>
-                                <label class="switch">
-                                    <input type="checkbox" name="backupS3ForcePathStyle" value="1" {{if eq .BackupS3ForcePathStyle "1"}}checked{{end}}>
-                                    <span class="slider"></span>
-                                </label>
+                                <input class="publish-checkbox" type="checkbox" name="backupS3ForcePathStyle" value="1" {{if eq .BackupS3ForcePathStyle "1"}}checked{{end}}>
                             </div>
                             <div class="form-group full-width">
                                 <label>S3 连通性检测</label>
