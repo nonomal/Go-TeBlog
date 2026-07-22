@@ -2945,6 +2945,7 @@ func main() {
 			"RecentPostsSize":            getOption(db, "recentPostsSize", "15"),
 			"RecentCommentsSize":         getOption(db, "recentCommentsSize", "10"),
 			"ShowDateArchives":           getOption(db, "showDateArchives", "1"),
+			"RSSEnabled":                 getOption(db, "rssEnabled", "1"),
 			"DateArchivesSize":           getOption(db, "dateArchivesSize", "12"),
 			"GrokApiKey":                 apiKey,
 			"AiApiUrl":                   getOption(db, "aiApiUrl", "https://api.groq.com/openai/v1/chat/completions"),
@@ -3074,6 +3075,7 @@ func main() {
 		recentPostsSize := c.PostForm("recentPostsSize")
 		recentCommentsSize := c.PostForm("recentCommentsSize")
 		showDateArchives := c.DefaultPostForm("showDateArchives", "0")
+		rssEnabled := c.DefaultPostForm("rssEnabled", "0")
 		dateArchivesSize := strings.TrimSpace(c.PostForm("dateArchivesSize"))
 		if dateArchivesSize == "" {
 			dateArchivesSize = "12"
@@ -3171,6 +3173,7 @@ func main() {
 		setOption(db, "recentPostsSize", recentPostsSize)
 		setOption(db, "recentCommentsSize", recentCommentsSize)
 		setOption(db, "showDateArchives", showDateArchives)
+		setOption(db, "rssEnabled", rssEnabled)
 		setOption(db, "dateArchivesSize", dateArchivesSize)
 		setOption(db, "grokApiKey", grokApiKey)
 		setOption(db, "aiApiUrl", aiApiUrl)

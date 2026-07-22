@@ -30,8 +30,7 @@
     <link rel="stylesheet" href="{{.Site.ThemeBase}}/go-custom.css">
     <link rel="stylesheet" href="{{.Site.ThemeBase}}/css/font-awesome.min.css">
     <style>
-        :root,
-        :root[data-theme='dark'] {
+        :root {
             --primary-color: {{.Site.Skin.PrimaryColor}};
             --primary-hover: {{.Site.Skin.PrimaryHover}};
             --success-color: {{.Site.Skin.SuccessColor}};
@@ -104,6 +103,9 @@
                             {{end}}
                 </nav>
                 <div class="nav-theme">
+                    {{if .Site.RSSEnabled}}
+                    <a class="rss-link" href="/blog/rss.xml" title="RSS 订阅">RSS</a>
+                    {{end}}
                     <button type="button" class="theme-mode-cycle" aria-label="显示模式" title="显示模式">
                         <i class="fas fa-sun" aria-hidden="true"></i>
                     </button>

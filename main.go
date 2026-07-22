@@ -694,6 +694,7 @@ type SiteInfo struct {
 	ThemeBase   string
 	Skin        SkinConfig
 	SiteUrl     string
+	RSSEnabled  bool
 	FooterCode  template.HTML
 }
 
@@ -706,6 +707,31 @@ type sitemapURLSet struct {
 	XMLName xml.Name     `xml:"urlset"`
 	Xmlns   string       `xml:"xmlns,attr"`
 	URLs    []sitemapURL `xml:"url"`
+}
+
+type rssFeed struct {
+	XMLName      xml.Name  `xml:"rss"`
+	Version      string    `xml:"version,attr"`
+	ContentXMLNS string    `xml:"xmlns:content,attr"`
+	Channel      rssChannel `xml:"channel"`
+}
+
+type rssChannel struct {
+	Title       string    `xml:"title"`
+	Link        string    `xml:"link"`
+	Description string    `xml:"description"`
+	LastBuild   string    `xml:"lastBuildDate,omitempty"`
+	Items       []rssItem `xml:"item"`
+}
+
+type rssItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	GUID        string `xml:"guid"`
+	PubDate     string `xml:"pubDate"`
+	Author      string `xml:"author,omitempty"`
+	Description string `xml:"description"`
+	Content     string `xml:"content:encoded"`
 }
 
 type PageData struct {
@@ -1622,7 +1648,60 @@ func main() {
 		}
 	}
 
+	handleRSS := func(c *gin.Context) {
+		if getOption(db, "rssEnabled", "1") != "1" {
+			c.String(http.StatusNotFound, "404 page not found")
+			return
+		}
+
+		site := getSiteInfo(db)
+		baseURL := getSitemapBaseURL(db, c.Request)
+		posts := getRSSPosts(db, 20)
+		items := make([]rssItem, 0, len(posts))
+		for _, post := range posts {
+			var content bytes.Buffer
+			body := strings.TrimPrefix(post.Text, "<!--markdown-->")
+			if err := mdRenderer.Convert([]byte(body), &content); err != nil {
+				content.WriteString(body)
+			}
+			articleURL := strings.TrimRight(baseURL, "/") + fmt.Sprintf("/blog/index.php/archives/%d/", post.Cid)
+			publishedAt := time.Unix(post.Created, 0).Format(time.RFC1123Z)
+			items = append(items, rssItem{
+				Title:       post.Title,
+				Link:        articleURL,
+				GUID:        articleURL,
+				PubDate:     publishedAt,
+				Author:      post.Author,
+				Description: fixAttachmentLinks(content.String()),
+				Content:     fixAttachmentLinks(content.String()),
+			})
+		}
+
+		lastBuild := ""
+		if len(posts) > 0 {
+			lastBuild = time.Unix(posts[0].Created, 0).Format(time.RFC1123Z)
+		}
+		c.Header("Content-Type", "application/rss+xml; charset=utf-8")
+		c.String(http.StatusOK, xml.Header)
+		encoder := xml.NewEncoder(c.Writer)
+		encoder.Indent("", "  ")
+		if err := encoder.Encode(rssFeed{
+			Version:      "2.0",
+			ContentXMLNS: "http://purl.org/rss/1.0/modules/content/",
+			Channel: rssChannel{
+				Title:       site.Title,
+				Link:        strings.TrimRight(baseURL, "/") + "/blog/index.php",
+				Description: site.Description,
+				LastBuild:   lastBuild,
+				Items:       items,
+			},
+		}); err != nil {
+			log.Printf("Error rendering RSS: %v", err)
+		}
+	}
+
 	r.GET("/sitemap.xml", handleSitemap)
+	r.GET("/blog/rss.xml", handleRSS)
 	r.GET("/blog", handleIndex)
 	r.GET("/blog/", handleIndex)
 	r.GET("/blog/index.php", handleIndex)
@@ -1885,6 +1964,7 @@ func initDB(db *sql.DB) {
 			"theme":       "default",
 			"siteUrl":     "http://localhost:8190",
 			"timezone":    "Asia/Shanghai",
+			"rssEnabled":  "1",
 		}
 		for k, v := range options {
 			db.Exec("INSERT INTO typecho_options (name, user, value) VALUES (?, 0, ?)", k, v)
@@ -1905,6 +1985,7 @@ func getSiteInfo(db *sql.DB) SiteInfo {
 		ThemeBase:   skin.ThemeBase,
 		Skin:        skin,
 		SiteUrl:     getOption(db, "siteUrl", "http://localhost:8190"),
+		RSSEnabled:  getOption(db, "rssEnabled", "1") == "1",
 		FooterCode:  template.HTML(getOption(db, "footerCode", "")),
 	}
 }
@@ -2247,6 +2328,39 @@ func getPosts(db *sql.DB, page, pageSize int, search string) ([]Post, int) {
 		posts = append(posts, p)
 	}
 	return posts, total
+}
+
+// getRSSPosts uses the same visibility rules as the public article listings.
+func getRSSPosts(db *sql.DB, limit int) []Post {
+	rows, err := db.Query(`
+		SELECT t.cid, t.title, t.slug, t.created, t.text, t.commentsNum, t.authorId, u.screenName
+		FROM typecho_contents t
+		LEFT JOIN typecho_users u ON t.authorId = u.uid
+		WHERE t.type='post' AND t.status='publish'
+		AND t.cid NOT IN (
+			SELECT cid FROM typecho_relationships r
+			JOIN go_category_settings s ON r.mid = s.mid
+			WHERE s.show_on_home = 0 OR s.is_offline = 1
+		)
+		ORDER BY t.created DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	posts := make([]Post, 0, limit)
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(&post.Cid, &post.Title, &post.Slug, &post.Created, &post.Text, &post.CommentsNum, &post.AuthorId, &post.Author); err != nil {
+			continue
+		}
+		if post.Author == "" {
+			post.Author = "admin"
+		}
+		posts = append(posts, post)
+	}
+	return posts
 }
 
 func getPostsByCategory(db *sql.DB, page, pageSize int, slug string) ([]Post, int) {

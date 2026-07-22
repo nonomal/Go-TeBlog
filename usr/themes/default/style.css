@@ -353,6 +353,17 @@ textarea {
     margin-left: 12px;
     display: flex;
     align-items: center;
+    gap: 18px;
+}
+
+.rss-link {
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.rss-link:hover {
+    color: var(--primary-color);
 }
 
 /* Search 现代化 */
