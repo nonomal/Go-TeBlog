@@ -841,6 +841,16 @@
                                     min="1">
                             </div>
                             <div class="form-group">
+                                <label>评论最大长度</label>
+                                <span class="label-desc">英文和数字按连续词计数，中文按单字计数，空格和标点不计；填 0 表示不限制。</span>
+                                <input type="number" name="commentMaxChars" value="{{.CommentMaxChars}}" min="0" required>
+                            </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label>允许评论超链</label>
+                                <span class="label-desc">关闭后拒绝包含 HTML、Markdown 或 URL 超链的评论。</span>
+                                <input class="publish-checkbox" type="checkbox" name="commentAllowLinks" value="1" {{if eq .CommentAllowLinks "1"}}checked{{end}}>
+                            </div>
+                            <div class="form-group">
                                 <label>AI 判定阈值 (0-9)</label>
                                 <span class="label-desc">分越高越宽松。</span>
                                 <input type="number" name="aiThreshold" value="{{.AiThreshold}}" min="0" max="9"

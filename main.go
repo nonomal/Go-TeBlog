@@ -24,6 +24,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yuin/goldmark"
@@ -45,6 +46,9 @@ var systemTimeLocation = time.Local
 var skinThemeNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var skinColorPattern = regexp.MustCompile(`(?i)^(#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([0-9.,%\s/+-]+\)|hsla?\([0-9.,%\s/+-]+\)|transparent|inherit|initial|unset|currentColor|[a-z]+)$`)
 var skinLengthPattern = regexp.MustCompile(`(?i)^(0|[0-9]+(?:\.[0-9]+)?)(px|rem|em|vw|vh|%)?$`)
+var commentHTMLLinkPattern = regexp.MustCompile(`(?is)<a\b[^>]*\bhref\s*=`)
+var commentMarkdownLinkPattern = regexp.MustCompile(`(?is)\[[^\]\r\n]+\]\(\s*(<[^>\r\n]+>|[^)\r\n]+)\s*\)`)
+var commentURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"']+|\bmailto:[^\s<>"']+|\bwww\.[^\s<>"']+`)
 
 type commentAttemptLimiter struct {
 	mu       sync.Mutex
@@ -983,6 +987,39 @@ func fixAttachmentLinks(htmlContent string) string {
 	})
 }
 
+func containsCommentHyperlink(text string) bool {
+	return commentHTMLLinkPattern.MatchString(text) ||
+		commentMarkdownLinkPattern.MatchString(text) ||
+		commentURLPattern.MatchString(text)
+}
+
+func countCommentUnits(text string) int {
+	count := 0
+	inWord := false
+	flushWord := func() {
+		if inWord {
+			count++
+			inWord = false
+		}
+	}
+
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			flushWord()
+			count++
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			inWord = true
+			continue
+		}
+		flushWord()
+	}
+	flushWord()
+
+	return count
+}
+
 func main() {
 	// Get executable path and change to its directory
 	exePath, err := os.Executable()
@@ -1416,6 +1453,30 @@ func main() {
 				"Site":         site,
 				"ErrorTitle":   "表单验证失败",
 				"ErrorMessage": "称呼和内容不能为空，请填写完整后再提交。",
+			})
+			return
+		}
+
+		maxCommentChars := getOptionInt(db, "commentMaxChars", 0)
+		if maxCommentChars > 0 {
+			commentUnits := countCommentUnits(words)
+			if commentUnits > maxCommentChars {
+				site := getSiteInfo(db)
+				c.HTML(http.StatusBadRequest, "error.html", gin.H{
+					"Site":         site,
+					"ErrorTitle":   "评论内容过长",
+					"ErrorMessage": fmt.Sprintf("评论长度不能超过 %d 个词/字单位，当前为 %d 个词/字单位。", maxCommentChars, commentUnits),
+				})
+				return
+			}
+		}
+
+		if getOption(db, "commentAllowLinks", "1") != "1" && containsCommentHyperlink(words) {
+			site := getSiteInfo(db)
+			c.HTML(http.StatusBadRequest, "error.html", gin.H{
+				"Site":         site,
+				"ErrorTitle":   "评论不允许包含超链",
+				"ErrorMessage": "当前评论设置不允许包含 HTML、Markdown 或 URL 超链，请删除链接后重新提交。",
 			})
 			return
 		}

@@ -2963,6 +2963,8 @@ func main() {
 			"LogRetentionDays":           getOption(db, "logRetentionDays", "30"),
 			"CommentLimitIP":             getOption(db, "commentLimitIP", "1"),
 			"CommentLimitGlobal":         getOption(db, "commentLimitGlobal", "2"),
+			"CommentMaxChars":            getOption(db, "commentMaxChars", "0"),
+			"CommentAllowLinks":          getOption(db, "commentAllowLinks", "1"),
 			"CommentsEnabled":            getOption(db, "commentsEnabled", "1"),
 			"CfRequestLimitPerMinute":    getOption(db, "cfRequestLimitPerMinute", "1000"),
 			"CfApiToken":                 cfApiToken,
@@ -3111,6 +3113,11 @@ func main() {
 		logRetentionDays := c.PostForm("logRetentionDays")
 		commentLimitIP := c.PostForm("commentLimitIP")
 		commentLimitGlobal := c.PostForm("commentLimitGlobal")
+		commentMaxChars := normalizeCommentMaxChars(c.PostForm("commentMaxChars"))
+		commentAllowLinks := c.DefaultPostForm("commentAllowLinks", "0")
+		if commentAllowLinks != "1" {
+			commentAllowLinks = "0"
+		}
 		commentsEnabled := c.DefaultPostForm("commentsEnabled", "0")
 		cfRequestLimitPerMinute := strings.TrimSpace(c.PostForm("cfRequestLimitPerMinute"))
 		cfApiToken := strings.TrimSpace(c.PostForm("cfApiToken"))
@@ -3195,6 +3202,8 @@ func main() {
 		setOption(db, "logRetentionDays", logRetentionDays)
 		setOption(db, "commentLimitIP", commentLimitIP)
 		setOption(db, "commentLimitGlobal", commentLimitGlobal)
+		setOption(db, "commentMaxChars", strconv.Itoa(commentMaxChars))
+		setOption(db, "commentAllowLinks", commentAllowLinks)
 		setOption(db, "commentsEnabled", commentsEnabled)
 		setOption(db, "cfRequestLimitPerMinute", cfRequestLimitPerMinute)
 		setOption(db, "cfApiToken", cfApiToken)
@@ -5771,6 +5780,14 @@ func normalizeAITimeoutSeconds(value string) int {
 }
 
 func normalizeAIProofreadMaxChars(value string) int {
+	maxChars, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || maxChars < 0 {
+		return 0
+	}
+	return maxChars
+}
+
+func normalizeCommentMaxChars(value string) int {
 	maxChars, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || maxChars < 0 {
 		return 0
